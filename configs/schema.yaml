@@ -1,0 +1,126 @@
+# =============================================================================
+# schema.yaml — THE CONTRACT
+# -----------------------------------------------------------------------------
+# The unified label taxonomy for Project Guardian.
+#
+# Every converter (src/data/converters/*), the trainer (src/train/*), and the
+# evaluator (src/eval/*) read class IDs FROM THIS FILE. Nothing anywhere else
+# may hardcode class names or IDs. If the taxonomy needs to change, it changes
+# here — once.
+#
+# Design note: the detector classes are deliberately COARSE. Fragmenting the
+# military domain into many fine ship types would spread positive examples thin
+# and collapse recall on the classes we care most about. Keep military as ONE
+# class in the detector; fine-grained work is a separate 2nd-stage classifier
+# (see `fine_grained` below and src/fine_grained/).
+# =============================================================================
+
+# Flip to true on Day 1 once the team agrees the taxonomy is final. Tooling may
+# warn (or refuse to regenerate derived configs) when this is still false.
+locked: false
+
+# -----------------------------------------------------------------------------
+# Detector classes — the single source of truth for class_id <-> name.
+# Order IS the class ID. Do not reorder without regenerating data.yaml.
+# -----------------------------------------------------------------------------
+classes:
+  0: container_ship
+  1: tanker
+  2: cargo
+  3: passenger_ferry
+  4: yacht
+  5: speedboat
+  6: fishing_boat
+  7: military_vessel
+
+# -----------------------------------------------------------------------------
+# Semantic groupings over the detector classes (by class ID).
+# The >90% RECALL GATE applies to the `military` group. Overall mAP is
+# secondary; when a tradeoff appears, favour military recall.
+# -----------------------------------------------------------------------------
+groups:
+  civilian:     [0, 1, 2, 3, 4]
+  small_craft:  [4, 5, 6]
+  military:     [7]          # >90% recall gate applies here
+
+# -----------------------------------------------------------------------------
+# Fine-grained 2nd-stage classifier (BONUS).
+# These labels are NOT extra detector classes. They are applied by a separate
+# classifier that runs on crops already detected as military_vessel (class 7).
+# Kept disabled until the bonus track is picked up.
+# -----------------------------------------------------------------------------
+fine_grained:
+  enabled: false
+  labels:
+    - malaysian_rmn   # Royal Malaysian Navy
+    - foreign
+
+# -----------------------------------------------------------------------------
+# mappings — per-source-dataset native class name -> our schema.
+#
+# Each converter looks up its dataset's block here and translates native labels
+# into our class IDs. Conventions:
+#   - value is a schema class NAME (must exist in `classes` above)
+#   - value `null` means DROP the annotation (not a ship we model)
+#   - the key "*" is a wildcard: any native label not otherwise listed maps to
+#     this value. Useful for single-purpose datasets (e.g. all-military sets).
+#
+# These are STUBS. Fill in real native class names as each dataset is inspected
+# by its owner (P1). Record every dataset added in data/DATASETS.md.
+# -----------------------------------------------------------------------------
+mappings:
+
+  seaships:
+    # SeaShips (frontal/surface). Native 6-class taxonomy — TODO verify names.
+    ore_carrier: cargo
+    bulk_cargo_carrier: cargo
+    general_cargo_ship: cargo
+    container_ship: container_ship
+    fishing_boat: fishing_boat
+    passenger_ship: passenger_ferry
+
+  singapore_maritime:
+    # Singapore Maritime Dataset (frontal/surface, on/off shore). TODO verify.
+    ferry: passenger_ferry
+    boat: speedboat
+    vessel_ship: cargo
+    speed_boat: speedboat
+    kayak: null
+    sail_boat: yacht
+    buoy: null
+
+  shiprsimagenet:
+    # ShipRSImageNet (aerial/satellite). Overlaps HRSC + FGSD — DEDUP RISK.
+    # Fine-grained naval + civilian taxonomy; collapse to our coarse classes.
+    Other_Warship: military_vessel
+    Destroyer: military_vessel
+    Frigate: military_vessel
+    Aircraft_Carrier: military_vessel
+    Submarine: military_vessel
+    Cruiser: military_vessel
+    Container_Ship: container_ship
+    Oil_Tanker: tanker
+    Bulk_Carrier: cargo
+    Cargo: cargo
+    Fishing_Vessel: fishing_boat
+    Passenger_Ship: passenger_ferry
+    Yacht: yacht
+
+  hrsc2016:
+    # HRSC2016 (aerial/satellite, high-res). Mostly warships + some merchant.
+    # DEDUP RISK: FGSCR-42 derives from DOTA+HRSC; ShipRSImageNet overlaps HRSC.
+    aircraft_carrier: military_vessel
+    warcraft: military_vessel
+    warship: military_vessel
+    merchant_ship: cargo
+    ship: cargo
+
+  roboflow_military_ships:
+    # Roboflow Military Ships — single-purpose. Everything is military.
+    "*": military_vessel
+
+  dota:
+    # DOTA aerial. `ship` is generic and overlaps other sets heavily.
+    # Dropped by default to avoid train/test leakage — maps to null.
+    "*": null
+    ship: null

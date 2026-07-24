@@ -1,0 +1,43 @@
+# =============================================================================
+# train_baseline.yaml — config-driven baseline training params
+# -----------------------------------------------------------------------------
+# Consumed by src/train/. Nothing about training is hardcoded in Python — it
+# reads from here. Copy this file to make experiment variants.
+# =============================================================================
+
+# --- Dataset / model ---------------------------------------------------------
+data: configs/data.yaml
+model: yolo11m.pt          # medium YOLO11; good accuracy/speed for the comp
+
+# --- Core schedule -----------------------------------------------------------
+epochs: 100
+imgsz: 640
+batch: 16
+seed: 42                   # reproducibility — keep fixed across the team
+
+# --- Output ------------------------------------------------------------------
+project: outputs/runs
+name: baseline
+
+# --- Augmentation ------------------------------------------------------------
+# Aerial/satellite ships appear at arbitrary orientations, so rotation and
+# copy-paste matter more than for typical frontal datasets.
+copy_paste: 0.3            # paste ship instances across images — boosts rares
+mosaic: 1.0                # 4-image mosaic
+mixup: 0.15
+degrees: 10               # aerial ships are arbitrarily rotated
+fliplr: 0.5
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+
+# --- Inference / evaluation thresholds --------------------------------------
+# General confidence threshold applied to civilian classes.
+conf: 0.25
+
+# Military confidence threshold. INTENTIONALLY LOWER than `conf`.
+# This is the recall gate: the hard requirement is >90% recall on military /
+# threat classes, and a lower threshold trades precision for recall on exactly
+# those classes. DO NOT "fix" this by raising it to match `conf` — it is meant
+# to be low. See src/inference/predict.py for how per-class thresholds apply.
+conf_military: 0.10

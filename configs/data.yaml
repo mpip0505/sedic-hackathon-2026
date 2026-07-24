@@ -1,0 +1,29 @@
+# =============================================================================
+# data.yaml — YOLO dataset config
+# -----------------------------------------------------------------------------
+# Standard Ultralytics dataset descriptor. Points at data/processed and mirrors
+# the class list in configs/schema.yaml EXACTLY (same IDs, same order).
+#
+# If you change the taxonomy, change configs/schema.yaml first, then keep this
+# file in sync. CI asserts these two class lists match.
+# =============================================================================
+
+# Dataset root (relative to repo root, or override with an absolute path).
+path: data/processed
+train: images/train
+val: images/val
+test: images/test
+
+# Number of classes — must equal len(names).
+nc: 8
+
+# Class names — MUST mirror configs/schema.yaml `classes` (index == class ID).
+names:
+  0: container_ship
+  1: tanker
+  2: cargo
+  3: passenger_ferry
+  4: yacht
+  5: speedboat
+  6: fishing_boat
+  7: military_vessel

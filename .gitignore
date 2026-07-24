@@ -1,0 +1,32 @@
+# --- Data (never commit) -----------------------------------------------------
+data/raw/
+data/interim/
+data/processed/
+
+# --- Models & weights (never commit) ----------------------------------------
+models/
+*.pt
+*.onnx
+
+# --- Outputs -----------------------------------------------------------------
+outputs/
+
+# --- Python ------------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- Env / secrets -----------------------------------------------------------
+.env
+
+# --- OS / editor -------------------------------------------------------------
+.DS_Store
+
+# --- Keep placeholder dirs ---------------------------------------------------
+# .gitkeep files must survive the ignore rules above.
+!.gitkeep
+!**/.gitkeep
