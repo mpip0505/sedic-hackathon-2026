@@ -18,6 +18,20 @@ Overall mAP is secondary. **When a tradeoff appears, favour military recall.**
 The lower military confidence threshold (`conf_military: 0.10`) exists solely to
 serve this gate.
 
+## Reference docs
+Three reference docs live in `docs/`. Read them before making decisions:
+
+| File | What it is |
+|------|-----------|
+| `docs/SEDIC2026-track2.pdf` | **The official competition brief — the AUTHORITY on requirements and deliverables.** |
+| `docs/DATA_SOURCING_MAP.md` | Which datasets we use, their sources/licences, and the merge workflow. |
+| `docs/PROJECT_PLAYBOOK.md` | Repo structure, 4-person division of labour, step-by-step approach, sequencing. |
+
+**`docs/SEDIC2026-track2.pdf` is the source of truth.** If anything in this repo
+— code, config, this file, the README, or either of the other two docs —
+contradicts the PDF, **the PDF wins.** Update the repo to match it, not the
+other way around.
+
 ## Non-negotiables
 1. **`configs/schema.yaml` is THE CONTRACT.** Never hardcode class names or IDs
    anywhere. Converters, trainer, and eval all read classes from it via

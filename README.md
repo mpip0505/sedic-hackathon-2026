@@ -20,6 +20,25 @@ detects vessels across two visual domains — **frontal/surface** camera views a
 - [ ] Bonus: fine-grained RMN-vs-foreign 2nd stage
 - [ ] Deliverables: technical brief, video, poster
 
+## Deliverables checklist
+Derived from `docs/SEDIC2026-track2.pdf` (the authority — if this list drifts
+from the PDF, the PDF wins).
+
+**Phase 1 — Preliminary (online submission)**
+- [ ] Model source code (standard open-source libraries) — this repo
+- [ ] Detection log & results on the provided **Qualifier Video Clip**
+- [ ] **Performance benchmark: Recall > 90% on military / threat classes** (mandatory)
+- [ ] Technical Brief PDF — dataset used, model architecture, and the **logic for military classification**
+- [ ] Video demonstration — **≤ 5 minutes**, via YouTube
+- [ ] _(bonus)_ Distinguish **Local (Malaysian) vs Foreign** military assets → significantly higher technical scores
+
+**Phase 2 — Grand Finale "The Wireless Village" (top 10 only)**
+- [ ] Display poster — AI pipeline, data-processing methods, model accuracy
+- [ ] Live demo system — station running the model in real time
+- [ ] Functional GUI — not mandatory but a significant competitive advantage
+- [ ] Jury pitch — technical approach + model scalability
+- [ ] Live stress test — process the jury's fresh **"Hidden Verification"** images/videos on the spot (accuracy, speed, reliability)
+
 ## Quickstart
 ```bash
 # 1. environment + deps + stub smoke test
