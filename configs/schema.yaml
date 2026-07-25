@@ -56,6 +56,20 @@ fine_grained:
     - foreign
 
 # -----------------------------------------------------------------------------
+# dedup — cross-dataset near-duplicate removal in merge.py (before splitting).
+#   method: "greedy" drops an image only if it is within `threshold` of an
+#           already-KEPT representative (no transitive chaining). "cluster" is
+#           the legacy single-linkage behaviour (kept for comparison; chains).
+#   threshold: max hamming distance treated as a near-duplicate. Deliberately
+#           conservative (< the old 5) so we err toward KEEPING images — we
+#           cannot afford to over-prune military_vessel.
+# CLI flags (--dedup-method / --dedup-threshold) override these.
+# -----------------------------------------------------------------------------
+dedup:
+  method: greedy
+  threshold: 3
+
+# -----------------------------------------------------------------------------
 # domains — which visual domain each source dataset belongs to.
 # The frontal/surface and aerial/satellite views are different visual domains;
 # merge.py stratifies the train/val/test split across BOTH class and domain so
@@ -128,7 +142,7 @@ mappings:
     LHA LL: military_vessel
     LSD 41 LL: military_vessel
     Masyuu AS: military_vessel
-    Medical Ship: military_vessel      # hospital ship = military auxiliary
+    Medical Ship: null                 # hospital ship — not a threat/combatant; dropped
     Midway: military_vessel
     Nimitz: military_vessel
     Osumi LL: military_vessel
