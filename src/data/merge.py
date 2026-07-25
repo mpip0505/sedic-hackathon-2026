@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 import random
 import shutil
@@ -263,6 +264,43 @@ def log_distribution(items: list[Item], schema: dict) -> None:
         logger.info("  %-8s train=%d val=%d test=%d",
                     d, dom[d]["train"], dom[d]["val"], dom[d]["test"])
 
+    log_domain_class_table(items, schema)
+
+
+def log_domain_class_table(items: list[Item], schema: dict) -> None:
+    """Print a per-domain x per-class table (image counts summed over splits)."""
+    names = schema_utils.id_to_name(schema)
+    domains = sorted({it.domain for it in items})
+    grid: dict[str, Counter] = {d: Counter() for d in domains}
+    for it in items:
+        for c in it.classes:
+            grid[it.domain][c] += 1
+
+    logger.info("=== per-domain x per-class image counts ===")
+    header = "  " + f"{'class':<16}" + "".join(f"{d:>10}" for d in domains) + f"{'total':>10}"
+    logger.info(header)
+    for c in sorted(names):
+        cells = [grid[d].get(c, 0) for d in domains]
+        row = "  " + f"{names[c]:<16}" + "".join(f"{v:>10}" for v in cells)
+        logger.info("%s%s", row, f"{sum(cells):>10}")
+    totals = [sum(grid[d].values()) for d in domains]
+    footer = "  " + f"{'TOTAL':<16}" + "".join(f"{v:>10}" for v in totals)
+    logger.info("%s%s", footer, f"{sum(totals):>10}")
+
+
+def write_domains_json(items: list[Item], processed_root: Path) -> None:
+    """Write data/processed/domains.json mapping each image stem to its domain.
+
+    Enables per-domain evaluation (the val/test gate can be sliced by domain)
+    without re-deriving domains from source datasets.
+    """
+    payload: dict[str, dict[str, str]] = {s: {} for s in SPLITS}
+    for it in items:
+        payload[it.split][it.stem] = it.domain
+    out = processed_root / "domains.json"
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    logger.info("wrote domain map %s", out)
+
 
 # ---------------------------------------------------------------------------
 # Orchestration
@@ -287,6 +325,7 @@ def merge(
     items, _ = deduplicate(items, dedup_threshold, military)
     stratified_split(items, val, test, seed)
     write_split(items, processed_root)
+    write_domains_json(items, processed_root)
 
     try:
         processed_str = str(processed_root.resolve().relative_to(schema_utils.REPO_ROOT))
