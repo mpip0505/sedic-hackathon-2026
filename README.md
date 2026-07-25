@@ -39,7 +39,7 @@ integration work runs from day one.
 
 ## 1. Clone and enter
 ```bash
-git clone <repo-url>
+git clone https://github.com/mpip0505/sedic-hackathon-2026.git
 cd sedic-hackathon-2026
 ```
 
