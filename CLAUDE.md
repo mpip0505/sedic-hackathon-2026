@@ -78,14 +78,35 @@ other way around.
 
 ## Domain gotchas
 - **Cross-dataset duplicates cause train/test leakage.** Known overlaps:
-  - FGSCR-42 derives from **DOTA + HRSC**.
-  - **ShipRSImageNet** overlaps **HRSC + FGSD**.
-  Dedup across sources before splitting. `dota` maps to `null` (dropped) by
-  default for this reason.
-- **The val set stays UN-augmented**, and is **split per domain** (frontal vs
-  aerial) so per-domain performance is measurable.
+  - `military_ships` and `shiprsimagenet` share the ShipRSImageNet 50-class
+    taxonomy and many identical images (exact dups at hamming 0).
+  - FGSCR-42 derives from **DOTA + HRSC**; **ShipRSImageNet** overlaps HRSC/FGSD.
+  Dedup across sources before splitting. `dota` maps to `null` (dropped) for this.
+- **Dedup is GREEDY (leader), not single-linkage — do not revert.** An image is
+  dropped only if within `schema.dedup.threshold` of an already-**kept**
+  representative; candidates are never pairwise-chained. Single-linkage chained
+  A~B~C~D and collapsed ~2,961 distinct SeaShips frames into one cluster (46%
+  drop). Greedy keeps distinct frames (25% drop) and guarantees no two kept
+  images are within threshold. Method + threshold live in `configs/schema.yaml`
+  (`dedup:`), default `greedy` / **3** (conservative — err toward keeping; we
+  cannot over-prune `military_vessel`). `--dedup-method cluster` is legacy only.
+- **One duplicate threshold everywhere.** `merge` dedup, `validate`'s leakage
+  check, and `balance`'s synth guard ALL read `schema.dedup.threshold`. If you
+  change one, they must stay equal — otherwise validate false-alarms on pairs
+  dedup deliberately kept. Don't hardcode a separate leak threshold.
+- **`surface_synth` is a real domain value — keep it.** `military_vessel` has 0
+  real surface instances, so `balance.py` pastes aerial military onto surface
+  (SeaShips) backgrounds (cross-domain copy-paste), tagged `surface_synth` in
+  `domains.json`, **TRAIN split only**. It's a reversible stopgap; don't fold it
+  into `surface`, and never generate it for val/test.
+- **Synthetic images must not leak.** A small pasted object barely changes the
+  background hash, so every synthetic image is hashed and **dropped if within
+  threshold of any val/test image**. Keep that guard — it's what keeps the gate
+  measured on real, unseen data.
+- **The val/test sets stay UN-augmented** (no `augcp_`/`augxd_` there) and the
+  split is stratified per domain so per-domain performance is measurable.
 - **Horizontal boxes before oriented boxes.** Get HBB working first; OBB is a
   later upgrade for arbitrarily-rotated aerial ships (`degrees: 10` augments
-  toward this).
+  toward this). `yolo2yolo` already envelopes polygon labels to HBB.
 - **The low military threshold is DELIBERATE.** `conf_military: 0.10 < conf:
   0.25`. Do not "fix" it — it is the recall gate.

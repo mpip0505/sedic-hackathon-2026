@@ -48,6 +48,15 @@ def military_class_ids(schema: dict) -> set[int]:
     return set(schema.get("groups", {}).get("military", []))
 
 
+def dedup_config(schema: dict) -> dict:
+    """Return the dedup {method, threshold} config, with conservative defaults."""
+    cfg = schema.get("dedup") or {}
+    return {
+        "method": cfg.get("method", "greedy"),
+        "threshold": int(cfg.get("threshold", 3)),
+    }
+
+
 def domain_for(schema: dict, dataset: str, default: str = SURFACE) -> str:
     """Return the visual domain for a source dataset, falling back to `default`."""
     domains = schema.get("domains") or {}

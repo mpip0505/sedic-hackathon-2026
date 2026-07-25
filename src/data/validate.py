@@ -141,9 +141,15 @@ def _check_leakage(processed_root: Path, threshold: int, report: Report) -> None
                 )
 
 
-def validate(processed_root: Path, schema_path: Path, leak_threshold: int = 5) -> Report:
+def validate(processed_root: Path, schema_path: Path,
+             leak_threshold: int | None = None) -> Report:
     schema = schema_utils.load_schema(schema_path)
     nc = schema_utils.num_classes(schema)
+    # Leakage uses the SAME "duplicate" definition as dedup, so we never flag
+    # pairs that merge deliberately kept as distinct (would always false-alarm
+    # when dedup_threshold < leak_threshold).
+    if leak_threshold is None:
+        leak_threshold = schema_utils.dedup_config(schema)["threshold"]
     report = Report()
     for split in SPLITS:
         _check_split(processed_root, split, nc, report)
@@ -174,8 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--processed", type=Path, default=schema_utils.DEFAULT_PROCESSED_ROOT)
     p.add_argument("--schema", type=Path, default=schema_utils.DEFAULT_SCHEMA_PATH)
-    p.add_argument("--leak-threshold", type=int, default=5,
-                   help="max hamming distance treated as cross-split leakage")
+    p.add_argument("--leak-threshold", type=int, default=None,
+                   help="max hamming distance treated as cross-split leakage "
+                        "(default: schema `dedup.threshold`, so it matches dedup)")
     args = p.parse_args(argv)
 
     report = validate(args.processed, args.schema, args.leak_threshold)
