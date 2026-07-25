@@ -66,10 +66,9 @@ fine_grained:
 domains:
   seaships: surface
   singapore_maritime: surface
-  # Hanif's military-ships set is mostly frontal photographs; README labels it
-  # "mixed/aerial" — verify and adjust if aerial imagery dominates.
-  military_ships: surface
-  roboflow_military_ships: surface
+  # military_ships (Roboflow hanif-noer-r) uses the ShipRSImageNet 50-class
+  # taxonomy and is aerial/satellite imagery — same domain as shiprsimagenet.
+  military_ships: aerial
   shiprsimagenet: aerial
   hrsc2016: aerial
   dota: aerial
@@ -90,13 +89,13 @@ domains:
 mappings:
 
   seaships:
-    # SeaShips (frontal/surface). Native 6-class taxonomy — TODO verify names.
-    ore_carrier: cargo
-    bulk_cargo_carrier: cargo
-    general_cargo_ship: cargo
-    container_ship: container_ship
-    fishing_boat: fishing_boat
-    passenger_ship: passenger_ferry
+    # SeaShips (frontal/surface). Real Roboflow class-name strings (nc=6).
+    bulk cargo carrier: cargo
+    ore carrier: cargo
+    general cargo ship: cargo
+    container ship: container_ship
+    fishing boat: fishing_boat
+    passenger ship: passenger_ferry
 
   singapore_maritime:
     # Singapore Maritime Dataset (frontal/surface, on/off shore). TODO verify.
@@ -108,22 +107,66 @@ mappings:
     sail_boat: yacht
     buoy: null
 
-  shiprsimagenet:
-    # ShipRSImageNet (aerial/satellite). Overlaps HRSC + FGSD — DEDUP RISK.
-    # Fine-grained naval + civilian taxonomy; collapse to our coarse classes.
-    Other_Warship: military_vessel
-    Destroyer: military_vessel
-    Frigate: military_vessel
-    Aircraft_Carrier: military_vessel
+  # shiprsimagenet and military_ships are the SAME ShipRSImageNet 50-class
+  # taxonomy (both Roboflow exports), so they share ONE collapse via a YAML
+  # anchor (&shiprs50 / *shiprs50) to prevent drift. Deliberately coarse —
+  # fragmenting military into fine ship types collapses recall. Overlaps
+  # HRSC + FGSD, so DEDUP RISK when combined with those sets.
+  shiprsimagenet: &shiprs50
+    # --- military_vessel: warships, carriers, subs, landing, auxiliary/support
+    AOE: military_vessel
+    Arleigh Burke DD: military_vessel
+    Asagiri DD: military_vessel
+    Atago DD: military_vessel
+    Austin LL: military_vessel
+    Commander: military_vessel
+    EPF: military_vessel
+    Enterprise: military_vessel
+    Hatsuyuki DD: military_vessel
+    Hovercraft: military_vessel        # LCAC landing craft
+    Hyuga DD: military_vessel
+    LHA LL: military_vessel
+    LSD 41 LL: military_vessel
+    Masyuu AS: military_vessel
+    Medical Ship: military_vessel      # hospital ship = military auxiliary
+    Midway: military_vessel
+    Nimitz: military_vessel
+    Osumi LL: military_vessel
+    Other Aircraft Carrier: military_vessel
+    Other Auxiliary Ship: military_vessel
+    Other Destroyer: military_vessel
+    Other Frigate: military_vessel
+    Other Landing: military_vessel
+    Other Warship: military_vessel
+    Patrol: military_vessel            # patrol combatant
+    Perry FF: military_vessel
+    Sanantonio AS: military_vessel
     Submarine: military_vessel
-    Cruiser: military_vessel
-    Container_Ship: container_ship
-    Oil_Tanker: tanker
-    Bulk_Carrier: cargo
+    Ticonderoga: military_vessel
+    Training Ship: military_vessel     # naval training/auxiliary
+    Wasp LL: military_vessel
+    YuDao LL: military_vessel
+    YuDeng LL: military_vessel
+    YuTing LL: military_vessel
+    YuZhao LL: military_vessel
+    # --- civilian
+    Container Ship: container_ship
+    Oil Tanker: tanker
     Cargo: cargo
-    Fishing_Vessel: fishing_boat
-    Passenger_Ship: passenger_ferry
+    Ferry: passenger_ferry
+    Fishing Vessel: fishing_boat
+    Other Merchant: cargo              # generic merchant -> coarse cargo bucket
+    RoRo: cargo                        # roll-on/roll-off freight
+    # --- small craft
+    Motorboat: speedboat
     Yacht: yacht
+    Sailboat: yacht
+    # --- dropped (generic / unmappable / shore infrastructure)
+    Barge: null
+    Dock: null
+    Other Ship: null
+    Test Ship: null
+    Tugboat: null
 
   hrsc2016:
     # HRSC2016 (aerial/satellite, high-res). Mostly warships + some merchant.
@@ -134,9 +177,10 @@ mappings:
     merchant_ship: cargo
     ship: cargo
 
-  roboflow_military_ships:
-    # Roboflow Military Ships — single-purpose. Everything is military.
-    "*": military_vessel
+  # military_ships (Roboflow hanif-noer-r) is NOT single-purpose — it carries the
+  # full ShipRSImageNet 50-class taxonomy including civilians, so a "*"->military
+  # wildcard would mislabel civilians as military. It reuses the shiprs collapse.
+  military_ships: *shiprs50
 
   dota:
     # DOTA aerial. `ship` is generic and overlaps other sets heavily.
