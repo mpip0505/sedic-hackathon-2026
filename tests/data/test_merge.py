@@ -13,7 +13,8 @@ def _run(interim: Path, tmp_path: Path, schema_path: Path):
     processed = tmp_path / "processed"
     data_yaml = tmp_path / "data.yaml"
     items = merge.merge(interim, processed, schema_path,
-                        val=0.2, test=0.1, seed=42, data_yaml=data_yaml)
+                        val=0.2, test=0.1, seed=42, data_yaml=data_yaml,
+                        dedup_audit_dir=tmp_path / "dedup_audit")
     return items, processed, data_yaml
 
 

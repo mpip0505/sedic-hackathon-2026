@@ -20,7 +20,7 @@ Against the two core competition requirements:
 
 | Requirement | Status |
 |---|---|
-| **Multi-angle detection (frontal + aerial)** | Both domains present in the dataset and every split. ⚠️ but `military_vessel` is currently **aerial-only** (0 surface instances) — see §4. |
+| **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` has **0 real surface** instances; ~572 synthetic surface-military instances (`surface_synth`, cross-domain copy-paste) now added to train as a stopgap — see §4. |
 | **Recall > 90% on military classes** | Infrastructure ready (low `conf_military` threshold, gate measured on held-out **test** split, abort-if-zero-military). Actual recall **PENDING** (training not run). |
 
 ### Pipeline checklist
@@ -32,9 +32,9 @@ Against the two core competition requirements:
 | Data acquisition (3 datasets) | ✅ Done | Roboflow YOLO exports in `data/raw/` |
 | Converters (voc / dota / cls / **yolo2yolo**) | ✅ Done | all unit-tested |
 | Schema class mapping (50 → 8 collapse) | ✅ Done | anchored, shared by 2 datasets |
-| Merge → dedup → stratified split | ✅ Done | ran; `data/processed/` produced |
-| `validate` (label sanity + leakage) | ✅ Done | **PASS** on current processed set |
-| Balance / copy-paste augmentation | 🟡 Built, not yet run on real data | train-split-only, military-first |
+| Merge → dedup → stratified split | ✅ Done | greedy de-chained dedup; `data/processed/` produced |
+| `validate` (label sanity + leakage) | ✅ Done | **PASS** (leak threshold = dedup threshold) |
+| Balance / copy-paste augmentation | ✅ Done (run on real data) | same-domain **+ cross-domain surface_synth**, train-only |
 | Training wrapper (`src/train/train.py`) | 🟡 Built, **not run** | needs GPU + Ultralytics + weights |
 | Eval / military-recall gate (`src/eval/metrics.py`) | 🟡 Built, **not run** | runs after training |
 | Real inference path (`predict()` non-stub) | 🔴 Not started | `NotImplementedError` placeholder |
@@ -43,7 +43,7 @@ Against the two core competition requirements:
 | Bonus: oriented boxes (OBB) | 🔴 Not started | HBB envelope in place as precursor |
 | Bonus: RMN-vs-foreign 2nd stage | 🔴 Not started | `src/fine_grained/` is an empty package |
 | Deliverables (brief / video / poster) | 🔴 Not started | |
-| CI (ruff + schema + stub + pytest) | ✅ Done | 34 tests, all green |
+| CI (ruff + schema + stub + pytest) | ✅ Done | 40 tests, all green |
 
 ---
 
@@ -61,9 +61,8 @@ All three are **Roboflow YOLO exports** placed in `data/raw/<name>/` (git-ignore
 
 > ⚠️ **Licence caveat:** the Roboflow exports each declare **CC BY 4.0**, but the
 > *original* SeaShips and ShipRSImageNet datasets are academic-use-only. Do not
-> claim commercial rights; attribute all three. **`data/DATASETS.md` is stale** —
-> it still lists academic-only stubs with `~TBD` counts and must be reconciled to
-> the table above (P1).
+> claim commercial rights; attribute all three. `data/DATASETS.md` has been
+> reconciled to these real datasets/counts/licences.
 
 ### 2.2 The 50 → 8 class collapse (`configs/schema.yaml`)
 
@@ -75,7 +74,7 @@ Collapse of the 50 fine types:
 
 | → schema class | # source types | Examples |
 |---|---:|---|
-| `military_vessel` | 35 | Arleigh Burke DD, Nimitz, Submarine, Perry FF, Ticonderoga, LHA/LSD/Osumi/Yu* landing, Other Warship/Destroyer/Frigate/Auxiliary |
+| `military_vessel` | 34 | Arleigh Burke DD, Nimitz, Submarine, Perry FF, Ticonderoga, LHA/LSD/Osumi/Yu* landing, Other Warship/Destroyer/Frigate/Auxiliary |
 | `cargo` | 3 | Cargo, Other Merchant, RoRo |
 | `yacht` | 2 | Yacht, Sailboat |
 | `container_ship` | 1 | Container Ship |
@@ -83,7 +82,7 @@ Collapse of the 50 fine types:
 | `passenger_ferry` | 1 | Ferry |
 | `fishing_boat` | 1 | Fishing Vessel |
 | `speedboat` | 1 | Motorboat |
-| `null` (dropped) | 5 | Barge, Dock, Other Ship, Test Ship, Tugboat |
+| `null` (dropped) | 6 | Barge, Dock, Other Ship, Test Ship, Tugboat, Medical Ship |
 
 **Judgment calls** (as actually implemented in `schema.yaml`):
 
@@ -92,55 +91,58 @@ Collapse of the 50 fine types:
 | Hovercraft | `military_vessel` | LCAC landing craft |
 | Patrol | `military_vessel` | patrol combatant |
 | Training Ship | `military_vessel` | naval training / auxiliary |
-| **Medical Ship** | **`military_vessel`** | hospital ship = military auxiliary/support |
+| **Medical Ship** | **`null`** | hospital ship — not a threat/combatant; dropped |
 | Other Merchant, RoRo | `cargo` | generic merchant → coarse cargo bucket |
 | Barge, Tugboat | `null` | working craft with no clean schema class |
 | Test Ship, Dock, Other Ship | `null` | unmappable / shore infrastructure |
 
-> 🔶 **Flag for confirmation:** the task brief listed **Medical Ship → null**, but
-> the repo currently maps **Medical Ship → `military_vessel`**. If `null` was
-> intended, flip it in `schema.yaml` (`shiprsimagenet` block) and re-remap. All
-> other judgment calls match the brief.
-
 ### 2.3 Counts, domains, and split
 
-Boxes written per source (converter output → `data/interim/`):
-`seaships` 9,198 · `military_ships` 11,235 · `shiprsimagenet` 34,390.
+Boxes written per source (converter output → `data/interim/`, after Medical Ship
+→ null): `seaships` 9,198 (6,979 imgs) · `military_ships` 11,208 (2,641 imgs) ·
+`shiprsimagenet` 34,299 (4,535 imgs).
 
-After merge (dedup + stratified 70/20/10, seed 42): **14,155 collected → 6,545
-near-duplicates dropped → 7,610 kept.**
+After merge (**greedy** dedup at threshold 3 + stratified 70/20/10, seed 42):
+**14,155 collected → 3,583 near-duplicates dropped → 10,572 kept** (25.3% drop —
+see §2.4 for the de-chaining that lowered this from 46%).
 
-**Split sizes:** train **5,330** · val **1,520** · test **760**.
+**Split sizes:** train **7,403** · val **2,114** · test **1,055**.
 
 **Per-class images by split:**
 
 | Class | train | val | test |
 |---|---:|---:|---:|
-| container_ship | 679 | 189 | 94 |
-| tanker | 351 | 98 | 46 |
-| cargo | 2,587 | 730 | 369 |
-| passenger_ferry | 300 | 86 | 42 |
-| yacht | 272 | 77 | 39 |
-| speedboat | 501 | 133 | 69 |
-| fishing_boat | 289 | 85 | 44 |
-| **military_vessel** | **3,729** | **1,057** | **528** |
+| container_ship | 984 | 280 | 136 |
+| tanker | 349 | 99 | 48 |
+| cargo | 3,947 | 1,163 | 574 |
+| passenger_ferry | 421 | 111 | 63 |
+| yacht | 273 | 78 | 39 |
+| speedboat | 504 | 135 | 66 |
+| fishing_boat | 836 | 225 | 113 |
+| **military_vessel** | **3,721** | **1,079** | **528** |
 
 **Per-domain × per-class (images, summed over splits):**
 
 | Class | aerial | surface | total |
 |---|---:|---:|---:|
-| container_ship | 794 | 168 | 962 |
-| tanker | 495 | 0 | 495 |
-| cargo | 2,633 | 1,053 | 3,686 |
-| passenger_ferry | 351 | 77 | 428 |
-| yacht | 388 | 0 | 388 |
-| speedboat | 703 | 0 | 703 |
-| fishing_boat | 244 | 174 | 418 |
-| **military_vessel** | **5,314** | **0** | **5,314** |
-| **TOTAL** | **10,922** | **1,472** | **12,394** |
+| container_ship | 794 | 606 | 1,400 |
+| tanker | 496 | 0 | 496 |
+| cargo | 2,637 | 3,047 | 5,684 |
+| passenger_ferry | 352 | 243 | 595 |
+| yacht | 390 | 0 | 390 |
+| speedboat | 705 | 0 | 705 |
+| fishing_boat | 246 | 928 | 1,174 |
+| **military_vessel** | **5,328** | **0** | **5,328** |
+| **TOTAL** | **10,948** | **4,824** | **15,772** |
 
-_(An image with multiple classes counts once per class, so totals exceed the 7,610
-kept images. Per-image domain map is written to `data/processed/domains.json`.)_
+_(An image with multiple classes counts once per class, so totals exceed the
+10,572 kept images. Per-image domain map is written to
+`data/processed/domains.json`.)_
+
+**Synthetic surface-military (`balance.py`, cross-domain, TRAIN only):** ~380
+`surface_synth` images adding **~572 military instances** on surface backgrounds
+(real military instances in train: aerial **18,959**, surface **0**). Tagged
+`surface_synth` in `domains.json` so their effect is reportable and reversible.
 
 ### 2.4 Key findings
 
@@ -148,13 +150,29 @@ kept images. Per-image domain map is written to `data/processed/domains.json`.)_
   ShipRSImageNet taxonomy → one collapse, shared via YAML anchor to prevent drift.
 - **Wildcard-stub bug (caught & fixed):** the scaffold stub mapped
   `roboflow_military_ships: {"*": military_vessel}`, i.e. *everything* → military.
-  But `military_ships` actually contains civilians (6,061 military vs ~5,000
+  But `military_ships` actually contains civilians (6,034 military vs ~5,000
   civilian boxes). That stub would have poisoned the military class. Replaced with
   the real 50→8 collapse; the wildcard was retired.
-- **46% dedup drop:** 6,545 of 14,155 images removed as perceptual near-duplicates
-  (hamming ≤ 5). Expected — ShipRSImageNet ↔ military_ships overlap, plus Roboflow
-  augmentation/tiling producing near-identical frames. Dedup runs **before** the
-  split, so a duplicate can never straddle train/val/test. Rate to revisit (§4).
+- **Dedup was over-pruning by chaining — fixed.** The original single-linkage
+  clustering (threshold 5) dropped 6,545 images (46%), but ~78% of drops came from
+  transitive **chaining** (A~B~C…, each hop ≤5) — one cluster swallowed **2,961**
+  distinct SeaShips frames. Switched to **greedy leader dedup**: an image is
+  dropped only if within threshold of an already-**kept** representative (never
+  pairwise-chained), and the threshold was lowered **5 → 3** (conservative). New
+  result: **3,583 dropped (25%)**, largest cluster **38**, every drop ≤ threshold
+  (histogram `{0: 1114, 2: 2469}`). ~2,962 distinct frames recovered; surface
+  civilian coverage roughly tripled (e.g. cargo surface 1,053 → 3,047). Dedup runs
+  **before** the split; greedy guarantees no two kept images are within threshold,
+  so nothing leaks. Configurable in `schema.yaml` (`dedup.method`/`.threshold`).
+- **Synthetic surface-military + leak guard.** `military_vessel` has zero real
+  surface examples, so `balance.py` pastes aerial military crops onto surface
+  (SeaShips) backgrounds → `surface_synth`, TRAIN only. Because a small paste
+  barely changes the background hash, each candidate is hashed and **dropped if it
+  near-duplicates a val/test image** (same threshold), keeping the gate honest.
+- **One duplicate threshold everywhere.** merge dedup, `validate`'s leakage check,
+  and the `balance` synth guard all read `schema.dedup.threshold`, so "duplicate"
+  means the same thing in all three (otherwise validate false-alarms on pairs
+  dedup deliberately kept).
 - **Polygon → HBB envelope:** the ShipRSImageNet/military_ships Roboflow exports are
   **polygon/oriented labels**, not horizontal boxes. `yolo2yolo` collapses each
   polygon to its min/max horizontal envelope (horizontal-boxes-first plan); true
@@ -187,11 +205,11 @@ kept images. Per-image domain map is written to `data/processed/domains.json`.)_
 | `data/converters/dota2yolo.py` | DOTA oriented txt → HBB envelope |
 | `data/converters/cls2det.py` | Classification folders → full-image YOLO box |
 | `data/converters/yolo2yolo.py` | **YOLO passthrough remap** + polygon→HBB envelope (used for all 3 current datasets) |
-| `data/phash.py` | DCT perceptual hash + banded-LSH near-duplicate clustering |
-| `data/schema_utils.py` | Schema/group/domain lookups, `data.yaml` regen, drift check |
-| `data/merge.py` | Combine interim → dedup → stratified split (class × domain) → `processed/` + `manifest.csv` + `domains.json` |
-| `data/balance.py` | Copy-paste augment military onto same-domain backgrounds, **train only** |
-| `data/validate.py` | Label sanity (coords ∈ [0,1], class range, non-empty) + train/val/test leakage; exits nonzero on failure |
+| `data/phash.py` | DCT perceptual hash + **greedy leader dedup** (no chaining) + legacy banded-LSH clustering |
+| `data/schema_utils.py` | Schema/group/domain/**dedup** lookups, `data.yaml` regen, drift check |
+| `data/merge.py` | Combine interim → dedup (greedy) → stratified split (class × domain) → `processed/` + `manifest.csv` + `domains.json` + `outputs/dedup_audit/` |
+| `data/balance.py` | Copy-paste augment military — **same-domain + cross-domain (`surface_synth`)** with val/test leak guard, **train only** |
+| `data/validate.py` | Label sanity (coords ∈ [0,1], class range, non-empty) + train/val/test leakage (threshold = `schema.dedup.threshold`); exits nonzero on failure |
 | `train/train.py` | Config-driven Ultralytics wrapper (`--config`, `--set`, `--resume`, `--dry-run`) |
 | `eval/metrics.py` | Per-class recall + the >90% military gate (keyword-only `split`) |
 | `inference/predict.py` | Frozen detection interface + working `--stub` |
@@ -209,33 +227,36 @@ kept images. Per-image domain map is written to `data/processed/domains.json`.)_
   `split` argument is required/keyword-only so it can't silently default.
 - **`conf_military = 0.10 < conf = 0.25`:** intentional lower military threshold to
   favour recall; commented as such so nobody "fixes" it.
-- **Dedup before split:** perceptual dedup guarantees no near-duplicate leakage.
+- **Dedup before split, no chaining:** greedy leader dedup drops only images within
+  threshold of a **kept** representative, so kept images are pairwise > threshold —
+  no near-duplicate can straddle splits, and distinct frames aren't chained away.
+- **One duplicate threshold** shared by merge / validate / balance guard, so the
+  leakage check never contradicts the dedup decision.
 - **CI:** `ruff check .`, schema/data-match assertion, stub-contract run, and the
-  full 34-test pytest suite on every push (torch/ultralytics not required).
+  full 40-test pytest suite on every push (torch/ultralytics not required).
 
 ---
 
 ## 4. Known gaps & risks
 
-- **🔴 Military is aerial-only (0 surface instances).** The competition wants
-  multi-angle military detection, but every `military_vessel` box comes from the two
-  aerial sets; SeaShips (surface) has no military. A frontal-view military ship at
-  test time is out-of-distribution. **Highest-priority data gap.** Mitigations:
-  source surface/frontal military imagery (the planned Custom RMN set, Roboflow
-  frontal warship sets), and/or copy-paste military onto surface backgrounds
-  (`balance.py` currently pastes within the same domain only — would need a
-  cross-domain mode).
+- **🔴 No REAL surface-military data (0 real surface instances).** Every real
+  `military_vessel` box is aerial; SeaShips (surface) has no military. `balance.py`
+  now injects ~572 **synthetic** `surface_synth` military instances (train only) as
+  a stopgap, but these are pasted composites, not real frontal warships — a real
+  frontal-view military ship at test time is still out-of-distribution.
+  **Highest-priority data gap.** Real fix: source frontal military imagery (planned
+  Custom RMN set, Roboflow frontal warship sets). The `surface_synth` tag lets P2
+  train with/without it and disable it if it hurts.
 - **🟡 Thin / zero classes on the surface side:** `tanker`, `yacht`, `speedboat` have
-  **0 surface** instances; `yacht` (388) and `passenger_ferry` (428) are the
-  thinnest overall. Civilian aerial coverage leans on ShipRSImageNet.
-- **🟡 46% dedup rate to revisit.** Dropping ~6.5k images is aggressive; if it's
-  removing legitimate distinct frames, raise `--dedup-threshold` (currently 5) or
-  audit a sample of dropped pairs before committing to this split for final runs.
-- **🟡 `data/DATASETS.md` is stale** — wrong licences (says academic-only vs the
-  actual CC BY 4.0 exports), placeholder counts, and lists datasets not yet used
-  (Singapore Maritime, HRSC2016, Custom RMN). Reconcile to §2.1.
-- **🔶 Medical Ship mapping** differs from the brief (`military_vessel` vs `null`) —
-  confirm (§2.2).
+  **0 surface** instances; `yacht` (390) is the thinnest overall. Surface civilian
+  coverage improved a lot after de-chaining (cargo 3,047, container 606, fishing 928
+  on surface).
+- **🟡 Dedup threshold vs video frames.** Threshold lowered to 3 (greedy) fixed the
+  chaining over-prune, but SeaShips is video-derived: adjacent frames at hamming 4–5
+  are now treated as distinct and can land in different splits. Greedy guarantees no
+  *kept* pair ≤ threshold (so leak-free by our definition), but if near-adjacent
+  frames should count as leakage regardless, the fuller fix is **scene/group-aware
+  splitting** (keep a scene's frames in one split) — a larger change, not yet done.
 - **⚪ Nothing trained or evaluated yet.** No mAP, no recall, no confusion matrix —
   all **PENDING** a real Ultralytics run on GPU. The train→copy-weights→gate path is
   built and unit-tested up to the `YOLO(...)` call, but **not exercised end-to-end**.
@@ -246,12 +267,12 @@ kept images. Per-image domain map is written to `data/processed/domains.json`.)_
 
 ## 5. Next steps
 
-**P1 — Data (critical path).**
-1. Close the **surface-military gap**: source frontal military imagery and/or add a
-   cross-domain copy-paste mode to `balance.py`.
-2. Reconcile `data/DATASETS.md` to actual datasets/licences/counts.
-3. Audit a sample of dedup drops; tune `--dedup-threshold` if needed.
-4. Confirm the Medical Ship mapping decision.
+**P1 — Data (critical path).** _(Done: DATASETS.md reconciled; dedup de-chained +
+audited; Medical Ship → null; cross-domain `surface_synth` copy-paste built & run.)_
+1. Source **REAL** frontal/surface military imagery (Custom RMN + Roboflow frontal
+   warship sets) — `surface_synth` is only a stopgap.
+2. Decide whether SeaShips near-adjacent frames need **scene/group-aware splitting**
+   (vs the current distance-threshold dedup) before final training.
 
 **P2 — Training.**
 1. Run the real baseline: `python -m src.train.train --config configs/train_baseline.yaml`
@@ -293,6 +314,10 @@ kept images. Per-image domain map is written to `data/processed/domains.json`.)_
 | 2026-07-25 | Share one 50→8 collapse across both aerial sets (YAML anchor) | Identical taxonomy; anchor prevents the two mappings drifting apart |
 | 2026-07-25 | **Horizontal boxes first**; `yolo2yolo` envelopes polygons to HBB | Simpler, enough to pass; OBB is a later bonus. Roboflow exports were polygon-format |
 | 2026-07-25 | `military_ships` tagged **aerial** (was surface stub) | It uses the aerial ShipRSImageNet taxonomy/imagery |
+| 2026-07-25 | **Medical Ship → `null`** (was military_vessel) | Hospital ship isn't a threat/combatant; keep the military class to actual warfighting vessels |
+| 2026-07-25 | **De-chain dedup**: greedy leader (compare to kept reps only), threshold 5 → 3 | Single-linkage chaining collapsed 2,961 distinct SeaShips frames into one cluster (46% drop, 78% chaining). Greedy + lower threshold drops only true near-dups (25%), recovers ~2,962 distinct frames, and can't chain |
+| 2026-07-25 | **`surface_synth` cross-domain copy-paste** (aerial military → surface backgrounds), train-only, distinctly tagged | 0 real surface-military data vs the multi-angle requirement; a reversible stopgap that P2 can ablate. Real frontal imagery still needed |
+| 2026-07-25 | **One duplicate threshold** across merge / validate / balance guard (`schema.dedup.threshold`) | A conservative dedup threshold below validate's old fixed 5 caused false leakage alarms; unifying the definition keeps them consistent |
 
 ---
 

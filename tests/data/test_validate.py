@@ -10,7 +10,8 @@ from src.data import merge, validate
 
 def _prepare(interim: Path, tmp_path: Path, schema_path: Path) -> Path:
     processed = tmp_path / "processed"
-    merge.merge(interim, processed, schema_path, seed=42, data_yaml=tmp_path / "data.yaml")
+    merge.merge(interim, processed, schema_path, seed=42, data_yaml=tmp_path / "data.yaml",
+                dedup_audit_dir=tmp_path / "dedup_audit")
     return processed
 
 
