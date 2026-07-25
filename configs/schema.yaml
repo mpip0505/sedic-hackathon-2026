@@ -56,6 +56,25 @@ fine_grained:
     - foreign
 
 # -----------------------------------------------------------------------------
+# domains — which visual domain each source dataset belongs to.
+# The frontal/surface and aerial/satellite views are different visual domains;
+# merge.py stratifies the train/val/test split across BOTH class and domain so
+# each split covers each domain, and eval can report per-domain recall.
+# A dataset not listed here falls back to merge.py's --default-domain (surface),
+# with a warning. Adjust as datasets are inspected. Values: surface | aerial.
+# -----------------------------------------------------------------------------
+domains:
+  seaships: surface
+  singapore_maritime: surface
+  # Hanif's military-ships set is mostly frontal photographs; README labels it
+  # "mixed/aerial" — verify and adjust if aerial imagery dominates.
+  military_ships: surface
+  roboflow_military_ships: surface
+  shiprsimagenet: aerial
+  hrsc2016: aerial
+  dota: aerial
+
+# -----------------------------------------------------------------------------
 # mappings — per-source-dataset native class name -> our schema.
 #
 # Each converter looks up its dataset's block here and translates native labels
