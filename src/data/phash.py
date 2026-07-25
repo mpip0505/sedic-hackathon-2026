@@ -34,15 +34,9 @@ _IMG_SIZE = _HASH_SIZE * _HIGHFREQ_FACTOR
 _DCT = _dct_matrix(_IMG_SIZE)
 
 
-def phash(path: Path | str) -> int | None:
-    """Return a 64-bit perceptual hash for an image, or None if unreadable."""
-    try:
-        with Image.open(path) as im:
-            gray = im.convert("L").resize((_IMG_SIZE, _IMG_SIZE), Image.LANCZOS)
-    except Exception as exc:  # noqa: BLE001 - malformed images must not crash
-        logger.warning("cannot hash %s: %s", path, exc)
-        return None
-
+def phash_pixels(im: Image.Image) -> int:
+    """Perceptual hash of an in-memory PIL image (no file I/O)."""
+    gray = im.convert("L").resize((_IMG_SIZE, _IMG_SIZE), Image.LANCZOS)
     pixels = np.asarray(gray, dtype=np.float64)
     dct = _DCT @ pixels @ _DCT.T
     low = dct[:_HASH_SIZE, :_HASH_SIZE]
@@ -53,6 +47,16 @@ def phash(path: Path | str) -> int | None:
     for bit in bits:
         value = (value << 1) | int(bit)
     return value
+
+
+def phash(path: Path | str) -> int | None:
+    """Return a 64-bit perceptual hash for an image file, or None if unreadable."""
+    try:
+        with Image.open(path) as im:
+            return phash_pixels(im)
+    except Exception as exc:  # noqa: BLE001 - malformed images must not crash
+        logger.warning("cannot hash %s: %s", path, exc)
+        return None
 
 
 def hamming(a: int, b: int) -> int:
@@ -116,6 +120,45 @@ def cluster_near_duplicates(
     for i in range(n):
         clusters.setdefault(uf.find(i), []).append(i)
     return [sorted(c) for c in clusters.values() if len(c) >= 2]
+
+
+def greedy_representative_dedup(
+    hashes: list[int], threshold: int, bands: int = _BANDS
+) -> tuple[list[int], list[int]]:
+    """Greedy leader dedup — drop only images near an already-KEPT representative.
+
+    Processes `hashes` in the given order. An image is KEPT (becomes a
+    representative) unless it is within `threshold` of some already-kept
+    representative, in which case it is DROPPED and attributed to the nearest
+    such representative. Because candidates are only ever compared against KEPT
+    representatives (never pairwise-chained), no cluster can grow by transitively
+    linking sequential-but-distinct frames.
+
+    Returns (assign, dist): assign[i] is -1 if image i was kept, else the index
+    of the representative it was dropped in favour of; dist[i] is the hamming
+    distance to that representative (0 for kept images).
+    """
+    band_bits = 64 // bands
+    buckets: dict[tuple[int, int], list[int]] = {}   # kept representatives only
+    assign = [-1] * len(hashes)
+    dist = [0] * len(hashes)
+
+    for i, h in enumerate(hashes):
+        candidates: set[int] = set()
+        for b in range(bands):
+            candidates.update(buckets.get((b, _band(h, b, band_bits)), ()))
+        best_j, best_d = -1, threshold + 1
+        for j in candidates:
+            d = hamming(h, hashes[j])
+            if d <= threshold and d < best_d:
+                best_j, best_d = j, d
+        if best_j == -1:
+            for b in range(bands):
+                buckets.setdefault((b, _band(h, b, band_bits)), []).append(i)
+        else:
+            assign[i] = best_j
+            dist[i] = best_d
+    return assign, dist
 
 
 def cross_group_near_duplicates(

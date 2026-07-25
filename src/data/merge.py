@@ -113,13 +113,18 @@ def collect_items(interim_root: Path, schema: dict, default_domain: str) -> list
 # Deduplication (before splitting)
 # ---------------------------------------------------------------------------
 def deduplicate(
-    items: list[Item], threshold: int, military: set[int]
+    items: list[Item], threshold: int, military: set[int], method: str = "greedy"
 ) -> tuple[list[Item], list[tuple[Item, Item, int]]]:
-    """Drop near-duplicate images, keeping one representative per cluster.
+    """Drop near-duplicate images before splitting. Returns (kept, dropped_log).
 
-    Representative = most boxes, then prefers an image containing military
-    (so we never drop the richer / military-bearing copy), then lexicographic
-    stem for determinism. Returns (kept, dropped_log).
+    method="greedy" (default): an image is dropped only if it is within
+    `threshold` of an already-KEPT representative — no transitive chaining, so
+    sequential-but-distinct frames are not swallowed into one giant cluster.
+    Images are processed military-first, then most-boxes, so a military-bearing /
+    richer copy is the one kept as representative.
+
+    method="cluster": legacy single-linkage (kept for comparison) — chains
+    A~B~C~D into one cluster and over-prunes.
     """
     for it in items:
         it.hash = phash.phash(it.image_path)
@@ -130,31 +135,166 @@ def deduplicate(
         logger.warning("%d image(s) could not be hashed; kept without dedup",
                        len(unhashable))
 
-    clusters = phash.cluster_near_duplicates([it.hash for it in hashable], threshold)
-    dropped_idx: set[int] = set()
     dropped_log: list[tuple[Item, Item, int]] = []
 
-    def rank(it: Item) -> tuple:
-        return (it.num_boxes, 1 if it.classes & military else 0, it.stem)
+    if method == "greedy":
+        # Process preferred representatives first: military-bearing, then more
+        # boxes, then stem for determinism.
+        ordered = sorted(
+            hashable,
+            key=lambda it: (0 if it.classes & military else 1, -it.num_boxes, it.stem),
+        )
+        assign, dist = phash.greedy_representative_dedup(
+            [it.hash for it in ordered], threshold)
+        kept = [it for pos, it in enumerate(ordered) if assign[pos] == -1]
+        for pos, it in enumerate(ordered):
+            if assign[pos] != -1:
+                dropped_log.append((it, ordered[assign[pos]], dist[pos]))
+        kept += unhashable
+    elif method == "cluster":
+        clusters = phash.cluster_near_duplicates(
+            [it.hash for it in hashable], threshold)
+        dropped_idx: set[int] = set()
 
-    for cluster in clusters:
-        rep = max((hashable[i] for i in cluster), key=rank)
-        rep_i = next(i for i in cluster if hashable[i] is rep)
-        for i in cluster:
-            if i == rep_i:
-                continue
-            dropped_idx.add(i)
-            dropped_log.append(
-                (hashable[i], rep, phash.hamming(hashable[i].hash, rep.hash))
-            )
+        def rank(it: Item) -> tuple:
+            return (it.num_boxes, 1 if it.classes & military else 0, it.stem)
 
-    kept = [it for k, it in enumerate(hashable) if k not in dropped_idx] + unhashable
-    for dup, rep, dist in dropped_log:
+        for cluster in clusters:
+            rep = max((hashable[i] for i in cluster), key=rank)
+            rep_i = next(i for i in cluster if hashable[i] is rep)
+            for i in cluster:
+                if i == rep_i:
+                    continue
+                dropped_idx.add(i)
+                dropped_log.append(
+                    (hashable[i], rep, phash.hamming(hashable[i].hash, rep.hash)))
+        kept = [it for k, it in enumerate(hashable) if k not in dropped_idx] + unhashable
+    else:
+        raise ValueError(f"unknown dedup method {method!r} (use greedy|cluster)")
+
+    for dup, rep, dist_ in dropped_log:
         logger.info("dup dropped: %s ~= %s (hamming=%d, datasets %s/%s)",
-                    dup.stem, rep.stem, dist, dup.dataset, rep.dataset)
-    logger.info("dedup: dropped %d near-duplicate image(s), kept %d",
-                len(dropped_log), len(kept))
+                    dup.stem, rep.stem, dist_, dup.dataset, rep.dataset)
+    logger.info("dedup[%s, thr=%d]: dropped %d near-duplicate image(s), kept %d",
+                method, threshold, len(dropped_log), len(kept))
     return kept, dropped_log
+
+
+def write_dedup_audit(
+    dropped_log: list[tuple[Item, Item, int]],
+    out_dir: Path,
+    military: set[int],
+    sample: int = 20,
+    method: str = "greedy",
+    threshold: int | None = None,
+) -> dict:
+    """Dump a distance-stratified sample of dropped duplicate PAIRS for review.
+
+    Copies each sampled pair's two images side-by-side into `out_dir` and writes
+    an audit.md with paths, perceptual hashes, distance, and whether the pair
+    involves military_vessel (the class we can least afford to over-prune).
+
+    Note: `dist` is the hamming distance from a DROPPED image to its cluster
+    REPRESENTATIVE. Because clustering is single-linkage (A~B~C…, each hop <=
+    threshold), a cluster can have large diameter, so large `dist` values are
+    distinct frames pulled into one cluster by CHAINING, not direct duplicates.
+    The cluster-size stats and the distance histogram quantify how much of the
+    drop is chaining vs true duplicates. Evidence only — changes no threshold.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    total = len(dropped_log)
+
+    def involves_military(i: int) -> bool:
+        dup, rep, _ = dropped_log[i]
+        return bool((dup.classes | rep.classes) & military)
+
+    military_idx = [i for i in range(total) if involves_military(i)]
+    hist: Counter = Counter(d for _, _, d in dropped_log)
+
+    # Reconstruct clusters from the log (grouped by representative) to expose
+    # chaining: cluster size = dropped members + 1 representative.
+    by_rep: dict[str, int] = Counter(rep.stem for _, rep, _ in dropped_log)
+    cluster_sizes = sorted((n + 1 for n in by_rep.values()), reverse=True)
+    n_clusters = len(by_rep)
+    largest = cluster_sizes[0] if cluster_sizes else 0
+    dropped_from_big = sum(n for n in by_rep.values() if n + 1 > 10)
+
+    # Distance-stratified sample so the user sees true duplicates (dist 0) AND
+    # chained-in distinct frames (high dist), not just one end.
+    order = sorted(range(total), key=lambda i: dropped_log[i][2])
+    if total <= sample:
+        chosen = list(order)
+    else:
+        step = total / sample
+        chosen = [order[int(k * step)] for k in range(sample)]
+    for i in sorted(military_idx, key=lambda i: -dropped_log[i][2])[:5]:
+        if i not in chosen:
+            chosen.append(i)
+
+    pct = f" ({100 * len(military_idx) / total:.1f}% of drops)" if total else ""
+    big_pct = f" ({100 * dropped_from_big / total:.1f}% of drops)" if total else ""
+    hist_str = str({d: hist[d] for d in sorted(hist)})
+    if n_clusters:
+        cluster_line = (f"- clusters formed: **{n_clusters}**, largest: "
+                        f"**{largest}** images, mean dropped/cluster: "
+                        f"**{total / n_clusters:.1f}**")
+    else:
+        cluster_line = "- clusters formed: 0"
+    if method == "greedy":
+        intro = ("Each dropped image A is within threshold of a KEPT "
+                 "representative B (greedy leader dedup — no transitive "
+                 "chaining, so every `dist` <= threshold). Open A vs B.")
+    else:
+        intro = ("Each pair below: image A was DROPPED; image B was KEPT "
+                 "(cluster representative). `dist` is A-to-representative; high "
+                 "values = chaining, not direct duplicates. Open A vs B.")
+    title = (f"# Dedup audit — dropped near-duplicate pairs "
+             f"(method={method}, threshold={threshold})")
+    lines = [
+        title,
+        "",
+        f"- total dropped images: **{total}**",
+        cluster_line,
+        f"- dropped from large groups (>10 imgs): **{dropped_from_big}**{big_pct}",
+        f"- drops involving military_vessel: **{len(military_idx)}**{pct}",
+        f"- distance-to-representative histogram: {hist_str}",
+        "",
+        intro,
+        "",
+        "| pair | dist | military | A (dropped) | B (kept) | hashA | hashB |",
+        "|---|---:|:---:|---|---|---|---|",
+    ]
+    for n, i in enumerate(chosen):
+        dup, rep, dist = dropped_log[i]
+        a_name = f"pair{n:02d}_a{dup.image_path.suffix}"
+        b_name = f"pair{n:02d}_b{rep.image_path.suffix}"
+        try:
+            shutil.copy2(dup.image_path, out_dir / a_name)
+            shutil.copy2(rep.image_path, out_dir / b_name)
+        except OSError as exc:
+            logger.warning("dedup audit: could not copy pair %d: %s", n, exc)
+        mil = "yes" if involves_military(i) else "no"
+        lines.append(
+            f"| {a_name} / {b_name} | {dist} | {mil} | {dup.stem} | {rep.stem} "
+            f"| {dup.hash:016x} | {rep.hash:016x} |"
+        )
+
+    (out_dir / "audit.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    summary = {
+        "total_dropped": total,
+        "military_pairs": len(military_idx),
+        "clusters": n_clusters,
+        "largest_cluster": largest,
+        "dropped_from_big_clusters": dropped_from_big,
+        "sampled": len(chosen),
+        "distance_histogram": {d: hist[d] for d in sorted(hist)},
+    }
+    logger.info("dedup audit: wrote %d sample pair(s) to %s "
+                "(%d/%d involve military; %d clusters, largest %d, %d dropped from "
+                "clusters >10)",
+                len(chosen), out_dir, len(military_idx), total, n_clusters, largest,
+                dropped_from_big)
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -312,17 +452,25 @@ def merge(
     val: float = 0.2,
     test: float = 0.1,
     seed: int = 42,
-    dedup_threshold: int = 5,
+    dedup_threshold: int | None = None,
+    dedup_method: str | None = None,
     data_yaml: Path = schema_utils.DEFAULT_DATA_YAML,
+    dedup_audit_dir: Path | None = None,
 ) -> list[Item]:
     schema = schema_utils.load_schema(schema_path)
     military = schema_utils.military_class_ids(schema)
+
+    dcfg = schema_utils.dedup_config(schema)
+    method = dedup_method or dcfg["method"]
+    threshold = dedup_threshold if dedup_threshold is not None else dcfg["threshold"]
 
     items = collect_items(interim_root, schema, schema_utils.SURFACE)
     if not items:
         raise SystemExit(f"no labelled images found under {interim_root}")
 
-    items, _ = deduplicate(items, dedup_threshold, military)
+    items, dropped_log = deduplicate(items, threshold, military, method)
+    audit_dir = dedup_audit_dir or (schema_utils.REPO_ROOT / "outputs" / "dedup_audit")
+    write_dedup_audit(dropped_log, audit_dir, military, method=method, threshold=threshold)
     stratified_split(items, val, test, seed)
     write_split(items, processed_root)
     write_domains_json(items, processed_root)
@@ -351,8 +499,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data-yaml", type=Path, default=schema_utils.DEFAULT_DATA_YAML,
                    help="where to regenerate data.yaml (default: configs/data.yaml)")
-    p.add_argument("--dedup-threshold", type=int, default=5,
-                   help="max hamming distance treated as a near-duplicate")
+    p.add_argument("--dedup-threshold", type=int, default=None,
+                   help="max hamming distance for a near-duplicate "
+                        "(default: schema `dedup.threshold`)")
+    p.add_argument("--dedup-method", choices=["greedy", "cluster"], default=None,
+                   help="dedup method (default: schema `dedup.method`); greedy "
+                        "avoids transitive chaining, cluster is legacy single-linkage")
     p.add_argument("--data-yaml-only", action="store_true",
                    help="only regenerate configs/data.yaml from schema, then exit")
     args = p.parse_args(argv)
@@ -367,7 +519,8 @@ def main(argv: list[str] | None = None) -> int:
 
     merge(args.interim, args.processed, args.schema,
           val=args.val, test=args.test, seed=args.seed,
-          dedup_threshold=args.dedup_threshold, data_yaml=args.data_yaml)
+          dedup_threshold=args.dedup_threshold, dedup_method=args.dedup_method,
+          data_yaml=args.data_yaml)
     return 0
 
 

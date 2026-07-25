@@ -41,3 +41,24 @@ conf: 0.25
 # those classes. DO NOT "fix" this by raising it to match `conf` — it is meant
 # to be low. See src/inference/predict.py for how per-class thresholds apply.
 conf_military: 0.10
+
+# --- Data balancing (src/data/balance.py, run before training) --------------
+# NOT an Ultralytics train arg — train.py ignores this block. Consumed by
+# `python -m src.data.balance`. Synthetic images live in the TRAIN split only.
+balance:
+  # same-domain copy-paste (military onto same-domain backgrounds)
+  copies: null            # null => ~= military instance count
+  max_paste: 3
+  # cross-domain: paste AERIAL military onto SURFACE backgrounds to manufacture
+  # surface/frontal-view military examples (we have 0 real ones). Tagged
+  # `surface_synth` in domains.json so their effect is reportable / reversible.
+  cross_domain:
+    enabled: true
+    copies: 400
+    max_paste: 2
+    source_domain: aerial
+    target_domain: surface
+    synth_tag: surface_synth
+    min_frac: 0.04        # pasted ship width as fraction of scene width (min)
+    max_frac: 0.16        # ... (max) — keep ships a sensible size in-scene
+    respect_horizon: true # place ships in the mid/lower band, not the sky
