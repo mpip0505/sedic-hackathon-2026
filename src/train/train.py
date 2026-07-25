@@ -34,8 +34,8 @@ from src.eval import metrics
 logger = logging.getLogger(__name__)
 
 # Config keys that are NOT Ultralytics train() arguments and must be stripped
-# before the kwargs are forwarded.
-_NON_TRAIN_KEYS = {"model", "conf", "conf_military"}
+# before the kwargs are forwarded. `balance` is consumed by src/data/balance.py.
+_NON_TRAIN_KEYS = {"model", "conf", "conf_military", "balance"}
 _SPLITS = ("train", "val", "test")
 
 
