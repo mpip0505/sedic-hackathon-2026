@@ -11,10 +11,13 @@ detects vessels across two visual domains — **frontal/surface** camera views a
 
 ## Status
 - [x] Phase 0 — repo scaffold, contracts, stub predictor, GUI skeleton
-- [x] Datasets: `military_ships` + `seaships` downloaded (both YOLO format)
-- [ ] Data pipeline: remap → unified schema, dedup, per-domain split
-- [ ] Baseline training (`yolo11m`, HBB)
-- [ ] Evaluation harness + military recall gate report
+- [x] Datasets: `military_ships` + `seaships` + `shiprsimagenet` downloaded (Roboflow YOLO)
+- [x] Data pipeline: remap → unified schema, **greedy dedup**, class×domain split, `validate` PASS
+      (10,572 imgs kept; train 7,403 / val 2,114 / test 1,055 — see `docs/PROGRESS.md`)
+- [x] Surface-military stopgap: cross-domain copy-paste → `surface_synth` (train only)
+      — ⚠️ synthetic; real frontal military imagery still the priority
+- [ ] Baseline training (`yolo11m`, HBB) — **PENDING** (no GPU run yet)
+- [ ] Evaluation harness + military recall gate report — built, not run
 - [ ] Real inference path in `predict()`
 - [ ] GUI: box drawing + video playback
 - [ ] Bonus: oriented boxes (OBB)
@@ -89,28 +92,60 @@ ROBOFLOW_API_KEY=your_key_here
 export $(grep -v '^#' .env | xargs)      # Windows PS: $env:ROBOFLOW_API_KEY="..."
 python scripts/download_military_ships.py
 python scripts/download_seaships.py
+python scripts/download_shiprsimagenet.py
 ```
 
 **Verify:**
 ```bash
-find data/raw/military_ships -name "*.jpg" | wc -l   # ~2.7k
-find data/raw/seaships -name "*.jpg" | wc -l         # ~7k
-cat data/raw/seaships/data.yaml                      # check class name strings
+find data/raw/military_ships -name "*.jpg" | wc -l    # ~2.7k
+find data/raw/seaships -name "*.jpg" | wc -l          # ~7k
+find data/raw/shiprsimagenet -name "*.jpg" | wc -l    # ~4.6k
+cat data/raw/seaships/data.yaml                       # check class name strings
 ```
 
 ### Datasets currently in use
-| Name | Domain | Images | Format | Source |
-|------|--------|--------|--------|--------|
-| `military_ships` | mixed / aerial | ~2.7k | YOLO (Roboflow) | `hanif-noer-r/military-ships` v1 |
-| `seaships` | frontal / surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 |
+| Name | Domain | Images | Format | Source | Licence |
+|------|--------|-------:|--------|--------|--------|
+| `military_ships` | aerial | ~2.7k | YOLO (Roboflow) | `hanif-noer-r/military-ships` v1 | CC BY 4.0 |
+| `seaships` | surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 | CC BY 4.0 |
+| `shiprsimagenet` | aerial | ~4.6k | YOLO (Roboflow) | `convertvoctoyolo/shiprsimagenet` v39 | CC BY 4.0¹ |
 
-Both arrive **already in YOLO format** with their own `train/valid/test` split —
-that split is **discarded**; `merge.py` does its own stratified split across all
-sources. Full provenance and licences: `data/DATASETS.md`.
+All arrive **already in YOLO format** with their own `train/valid/test` split —
+that split is **discarded**; `merge.py` does its own stratified split. The Roboflow
+labels are polygon/oriented; `yolo2yolo` envelopes them to horizontal boxes. Full
+provenance and licences: `data/DATASETS.md`.
 
-> **Known gaps:** `yacht` and `speedboat` are likely near-empty, and aerial
-> *civilian* coverage is thin. Confirm with the per-class counts from `merge.py`
-> before deciding whether to add ShipRSImageNet.
+_¹ the Roboflow re-export declares CC BY 4.0; the underlying ShipRSImageNet is
+academic-use-only — attribute both, don't claim commercial rights._
+
+> **Known gaps:** `military_vessel` has **0 real surface** instances (all aerial) —
+> the top data gap; `tanker`/`yacht`/`speedboat` have 0 surface too. `surface_synth`
+> copy-paste is a stopgap; real frontal military imagery is still needed.
+
+## 6. Build the unified dataset (P1)
+
+With the three sets in `data/raw/`, remap → merge → augment → validate:
+
+```bash
+# 1. remap each Roboflow set → data/interim/<name>/ (schema class IDs, HBB)
+python -m src.data.converters.yolo2yolo --dataset seaships
+python -m src.data.converters.yolo2yolo --dataset military_ships
+python -m src.data.converters.yolo2yolo --dataset shiprsimagenet
+
+# 2. merge → greedy dedup → stratified class×domain split → data/processed/
+python -m src.data.merge                 # also regenerates configs/data.yaml
+
+# 3. close the surface-military gap (TRAIN only, tagged surface_synth)
+python -m src.data.balance --clean
+
+# 4. sanity-check labels + train/val/test leakage (exits nonzero on failure)
+python -m src.data.validate
+```
+
+Current build (seed 42, greedy dedup @ hamming 3): **10,572 images kept** from
+14,155 (25% near-duplicate drop), split train 7,403 / val 2,114 / test 1,055.
+Dedup method/threshold live in `configs/schema.yaml` (`dedup:`); a drop audit is
+written to `outputs/dedup_audit/`. Details + per-class tables: `docs/PROGRESS.md`.
 
 ---
 
@@ -119,7 +154,7 @@ sources. Full provenance and licences: `data/DATASETS.md`.
 ## Ownership (team of 4)
 | Person | Owns | First task |
 |--------|------|-----------|
-| **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | Remap + merge the two datasets |
+| **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | ✅ remap+merge done → next: source real surface-military data |
 | **P2** | Model training — `src/train/`, augmentation, baseline | Training wrapper over Ultralytics |
 | **P3** | Integration + GUI — `src/inference/`, `app/`, `src/eval/` | Build GUI against `--stub` |
 | **P4** | Deliverables + bonus — brief/video/poster, `src/fine_grained/`, OBB | Start RMN image collection |
@@ -128,9 +163,10 @@ sources. Full provenance and licences: `data/DATASETS.md`.
 ```bash
 git checkout -b feat/<area>-<short-desc>     # e.g. feat/data-merge, feat/app-boxes
 ```
-Before opening a PR:
+Before opening a PR (matches CI):
 ```bash
-ruff check src app                            # lint
+ruff check .                                  # lint (whole repo)
+pytest -q                                     # 40 tests (no torch/GPU needed)
 python -m src.inference.predict --source none --stub   # contract must not break
 ```
 Merge to `main` via PR. Touching someone else's area? Tag them.
@@ -172,14 +208,15 @@ predict(source, weights=None, conf=0.25, conf_military=0.10, stub=False)
 
 ## Structure
 ```
-configs/      schema.yaml (contract), data.yaml, train_baseline.yaml
-data/         raw/ interim/ processed/ (gitignored) + DATASETS.md
-src/          data/ (+converters) · train · inference · eval · fine_grained
+configs/      schema.yaml (contract + dedup/domains), data.yaml (generated), train_baseline.yaml
+data/         raw/ → interim/ → processed/ (all gitignored) + DATASETS.md
+              processed/ holds images|labels/{train,val,test} + manifest.csv + domains.json
+src/          data/ (converters · merge · balance · validate · phash) · train · inference · eval · fine_grained
 app/          app.py (Streamlit) + assets
 models/       trained weights (gitignored)
-outputs/      detections/ · runs/ (gitignored)
+outputs/      detections/ · runs/ · dedup_audit/ (gitignored)
 deliverables/ technical_brief · video · poster
-docs/         competition brief, data sourcing map, project playbook
+docs/         competition brief, data sourcing map, project playbook, PROGRESS.md
 scripts/      setup.sh · dataset download scripts
 ```
 
@@ -225,6 +262,8 @@ Stop — don't commit. Check `.gitignore` contains both, then
 `git rm -r --cached .venv .env` if already staged.
 
 ## Licence note
-Code in this repo is the team's. **Several datasets are academic-use-only**
-(see `data/DATASETS.md`); respect each dataset's licence. No dataset images or
-model weights are committed.
+Code in this repo is the team's. The three in-use datasets are **Roboflow YOLO
+exports declaring CC BY 4.0** — attribute the Roboflow workspaces. Note the
+*underlying* SeaShips and ShipRSImageNet are academic-use-only, so don't claim
+commercial rights (see `data/DATASETS.md`). No dataset images or model weights
+are committed.
