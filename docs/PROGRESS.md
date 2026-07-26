@@ -318,6 +318,7 @@ audited; Medical Ship → null; cross-domain `surface_synth` copy-paste built & 
 | 2026-07-25 | **De-chain dedup**: greedy leader (compare to kept reps only), threshold 5 → 3 | Single-linkage chaining collapsed 2,961 distinct SeaShips frames into one cluster (46% drop, 78% chaining). Greedy + lower threshold drops only true near-dups (25%), recovers ~2,962 distinct frames, and can't chain |
 | 2026-07-25 | **`surface_synth` cross-domain copy-paste** (aerial military → surface backgrounds), train-only, distinctly tagged | 0 real surface-military data vs the multi-angle requirement; a reversible stopgap that P2 can ablate. Real frontal imagery still needed |
 | 2026-07-25 | **One duplicate threshold** across merge / validate / balance guard (`schema.dedup.threshold`) | A conservative dedup threshold below validate's old fixed 5 caused false leakage alarms; unifying the definition keeps them consistent |
+| 2026-07-26 | **Scene-aware split deferred until pre-submission** | SeaShips is video-derived; at dedup threshold 3, near-adjacent frames (hamming 4–5) count as distinct and can split across train/test, slightly inflating civilian-surface metrics (military/aerial largely unaffected). Accepted for the BASELINE run; scene-aware (group-by-source-video) splitting is REQUIRED before any numbers enter the technical brief. Owner: P1; trigger: before the final training run / any brief numbers |
 
 ---
 
