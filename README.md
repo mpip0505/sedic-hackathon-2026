@@ -235,10 +235,34 @@ scripts/      setup.sh · dataset download scripts
 Deliberately coarse — fragmenting military into many ship types collapses recall.
 
 ## Results
-| Model | Domain | mAP50 | mAP50-95 | Military recall |
-|-------|--------|-------|----------|-----------------|
-| _tbd_ | frontal | — | — | — |
-| _tbd_ | aerial  | — | — | — |
+
+Baseline `yolo11m` (`models/baseline_best.pt`), **held-out TEST split** (1,055 imgs),
+greedy VOC@0.5 matching. Reproduce: `python -m src.eval.detail --weights
+models/baseline_best.pt --split test` (full tables in `outputs/eval/test_eval.md`).
+
+**The gate — military recall (per domain):**
+
+| Domain | Military recall (conf 0.10) | Gate >0.90 |
+|--------|----------------------------:|:----------:|
+| aerial | 0.929 | ✅ |
+| surface | — *(no real surface-military in test¹)* | — |
+| **overall** | **0.929** | ✅ **PASS** |
+
+_¹ `military_vessel` has 0 real surface instances; `surface_synth` is train-only.
+So the gate is currently validated on the **aerial domain only** — see the decision
+log in `docs/PROGRESS.md`._
+
+**`conf_military` threshold sweep** (military_vessel) — recall clears 0.90 across the
+whole range; ~0.25–0.30 is the lowest-precision-cost operating point still above gate:
+
+| conf | recall | precision | gate |
+|-----:|-------:|----------:|:----:|
+| 0.10 | 0.929 | 0.737 | ✅ |
+| 0.25 | 0.910 | 0.861 | ✅ |
+| 0.30 | 0.901 | 0.881 | ✅ |
+
+mAP50 / mAP50-95 are **PENDING** (this harness reports recall/precision at operating
+thresholds, not mAP; run `python -m src.eval.metrics` for the Ultralytics mAP pass).
 
 ---
 

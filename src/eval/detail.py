@@ -34,6 +34,7 @@ import argparse
 import gc
 import json
 import logging
+import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -211,8 +212,14 @@ def _load_domains(processed_root: Path, split: str) -> dict[str, str]:
 def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
                         imgsz: int = 640, device: str = "cpu", batch: int = 4,
                         conf_floor: float = PRED_CONF_FLOOR,
-                        limit: int | None = None) -> list[Sample]:
-    """One inference pass → per-image GT + predictions (absolute pixel xyxy)."""
+                        limit: int | None = None,
+                        start: int = 0, end: int | None = None) -> list[Sample]:
+    """One inference pass → per-image GT + predictions (absolute pixel xyxy).
+
+    `start`/`end` slice the (sorted) image list so a long split can be collected
+    in bounded foreground chunks (see --dump / --from-dumps); `limit` caps the
+    total for a quick smoke test.
+    """
     from ultralytics import YOLO  # lazy: keep torch out of import time
 
     images_dir, labels_dir = _split_dirs(Path(data_yaml), split)
@@ -223,10 +230,12 @@ def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
     image_paths = sorted(p for p in images_dir.iterdir() if p.suffix.lower() in exts)
     if limit is not None:
         image_paths = image_paths[:limit]
+    image_paths = image_paths[start:end]
     if not image_paths:
-        raise SystemExit(f"no images found under {images_dir}")
-    logger.info("collecting predictions on %d %s images (device=%s, imgsz=%d, batch=%d)",
-                len(image_paths), split, device, imgsz, batch)
+        raise SystemExit(f"no images found under {images_dir} for slice [{start}:{end}]")
+    logger.info("collecting predictions on %d %s images [%d:%s] "
+                "(device=%s, imgsz=%d, batch=%d)",
+                len(image_paths), split, start, end, device, imgsz, batch)
 
     model = YOLO(str(weights))
     results = model.predict(
@@ -236,8 +245,7 @@ def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
 
     samples: list[Sample] = []
     missing_domain = 0
-    n_done = 0
-    for res in results:
+    for n_done, res in enumerate(results, start=1):
         path = Path(res.path)
         stem = path.stem
         h, w = res.orig_shape
@@ -260,7 +268,6 @@ def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
         # and OOM-kill a long CPU pass. Drop refs and collect periodically so
         # peak RSS stays flat instead of scaling with the image count.
         del res, boxes
-        n_done += 1
         if n_done % 50 == 0:
             gc.collect()
             logger.info("  … %d/%d images", n_done, len(image_paths))
@@ -327,6 +334,37 @@ def per_domain_recall(samples: list[Sample], schema: dict, conf: float = 0.25,
     if tp + fn > 0:
         result.overall_military_recall = tp / (tp + fn)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Chunked collection: dump a slice's predictions, reload + concatenate.
+# Lets a long split be collected in bounded foreground chunks (the harness caps
+# backgrounded processes harder), then aggregated in one cheap CPU-free step.
+# ---------------------------------------------------------------------------
+def dump_samples(samples: list[Sample], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as fh:
+        pickle.dump(samples, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    logger.info("dumped %d samples → %s", len(samples), path)
+
+
+def load_dumps(dump_dir: Path) -> list[Sample]:
+    files = sorted(dump_dir.glob("*.pkl"))
+    if not files:
+        raise SystemExit(f"no *.pkl prediction dumps found in {dump_dir}")
+    samples: list[Sample] = []
+    seen: set[str] = set()
+    for f in files:
+        with open(f, "rb") as fh:
+            chunk = pickle.load(fh)
+        for s in chunk:
+            if s.stem in seen:  # overlapping chunks → keep one copy
+                continue
+            seen.add(s.stem)
+            samples.append(s)
+    logger.info("loaded %d unique samples from %d dump(s) in %s",
+                len(samples), len(files), dump_dir)
+    return samples
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +441,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m src.eval.detail",
         description="conf_military threshold sweep + per-domain recall (CPU-friendly).",
     )
-    p.add_argument("--weights", required=True, type=Path)
+    p.add_argument("--weights", type=Path, default=None,
+                   help="model weights (required unless --from-dumps)")
     p.add_argument("--data", default=schema_utils.DEFAULT_DATA_YAML, type=Path)
     p.add_argument("--schema", default=schema_utils.DEFAULT_SCHEMA_PATH, type=Path)
     p.add_argument("--split", default="test", choices=["train", "val", "test"])
@@ -418,19 +457,43 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--batch", type=int, default=4, help="inference batch (small for CPU)")
     p.add_argument("--limit", type=int, default=None,
                    help="only run the first N images (smoke test / quick check)")
+    p.add_argument("--start", type=int, default=0, help="chunk start index (sorted list)")
+    p.add_argument("--end", type=int, default=None, help="chunk end index (exclusive)")
+    p.add_argument("--dump", type=Path, default=None,
+                   help="collect predictions for [start:end] and pickle them here, then "
+                        "exit (no tables). Use for bounded foreground chunks.")
+    p.add_argument("--from-dumps", type=Path, default=None,
+                   help="skip inference; load pickled chunks from this dir and report.")
     p.add_argument("--thresholds", default=",".join(str(t) for t in DEFAULT_THRESHOLDS),
                    help="comma-separated sweep thresholds")
     p.add_argument("--md-out", type=Path, default=None,
                    help="write the markdown tables here (default outputs/eval/<split>_eval.md)")
     args = p.parse_args(argv)
 
+    if args.weights is None and args.from_dumps is None:
+        p.error("--weights is required unless --from-dumps is given")
+
     schema = schema_utils.load_schema(args.schema)
     military_ids = schema_utils.military_class_ids(schema)
     thresholds = tuple(float(t) for t in args.thresholds.split(",") if t.strip())
 
-    samples = collect_predictions(args.weights, args.data, args.split,
-                                  imgsz=args.imgsz, device=args.device, batch=args.batch,
-                                  limit=args.limit)
+    # --dump: collect a slice and persist it, nothing else.
+    if args.dump is not None:
+        samples = collect_predictions(args.weights, args.data, args.split,
+                                      imgsz=args.imgsz, device=args.device,
+                                      batch=args.batch, limit=args.limit,
+                                      start=args.start, end=args.end)
+        dump_samples(samples, args.dump)
+        return 0
+
+    # --from-dumps: reuse persisted chunks (no torch); else one live pass.
+    if args.from_dumps is not None:
+        samples = load_dumps(args.from_dumps)
+    else:
+        samples = collect_predictions(args.weights, args.data, args.split,
+                                      imgsz=args.imgsz, device=args.device,
+                                      batch=args.batch, limit=args.limit,
+                                      start=args.start, end=args.end)
 
     rows = sweep_military(samples, military_ids, thresholds, args.iou)
     _log_sweep(rows, args.gate)
@@ -440,8 +503,9 @@ def main(argv: list[str] | None = None) -> int:
                             gate=args.gate)
     _log_per_domain(res)
 
+    wname = Path(args.weights).name if args.weights else "baseline_best.pt"
     md = (f"# Baseline evaluation — {args.split} split\n\n"
-          f"`{Path(args.weights).name}` · IoU {args.iou:.2f} · device {args.device}\n\n"
+          f"`{wname}` · IoU {args.iou:.2f} · {len(samples)} images\n\n"
           + sweep_markdown(rows, args.gate) + "\n\n"
           + per_domain_markdown(res) + "\n")
     md_out = args.md_out or (schema_utils.REPO_ROOT / "outputs" / "eval"

@@ -2,6 +2,8 @@
 data/raw/
 data/interim/
 data/processed/
+data_processed.zip
+*.zip
 
 # --- Models & weights (never commit) ----------------------------------------
 models/
@@ -13,6 +15,8 @@ outputs/
 
 # --- Python ------------------------------------------------------------------
 .venv/
+.venv*/
+*.log
 __pycache__/
 *.py[cod]
 *.egg-info/
