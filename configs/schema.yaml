@@ -80,6 +80,10 @@ dedup:
 domains:
   seaships: surface
   singapore_maritime: surface
+  # military_surface (Roboflow hannah-agkvq/military-ship-detection): REAL
+  # frontal/surface warship imagery — the first surface-domain military source.
+  # Closes the surface-military gap and seeds a surface military TEST set.
+  military_surface: surface
   # military_ships (Roboflow hanif-noer-r) uses the ShipRSImageNet 50-class
   # taxonomy and is aerial/satellite imagery — same domain as shiprsimagenet.
   military_ships: aerial
@@ -101,6 +105,12 @@ domains:
 # by its owner (P1). Record every dataset added in data/DATASETS.md.
 # -----------------------------------------------------------------------------
 mappings:
+
+  military_surface:
+    # Single-class Roboflow set "military-ship-detection" (frontal/surface).
+    # Every annotated `ship` is the military detection target -> coarse military
+    # class. Explicit (not "*") so any future added class isn't swept in silently.
+    ship: military_vessel
 
   seaships:
     # SeaShips (frontal/surface). Real Roboflow class-name strings (nc=6).

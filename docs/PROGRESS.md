@@ -20,7 +20,7 @@ Against the two core competition requirements:
 
 | Requirement | Status |
 |---|---|
-| **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` has **0 real surface** instances; ~572 synthetic surface-military instances (`surface_synth`, cross-domain copy-paste) now added to train as a stopgap — see §4. |
+| **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` now has **real surface** coverage via `military_surface` (2,928 surface imgs; test holds 371 real surface-military instances). The earlier `surface_synth` copy-paste stopgap is set to zero for the next run — see §2.3 / §4. |
 | **Recall > 90% on military classes** | Infrastructure ready (low `conf_military` threshold, gate measured on held-out **test** split, abort-if-zero-military). Actual recall **PENDING** (training not run). |
 
 ### Pipeline checklist
@@ -34,7 +34,7 @@ Against the two core competition requirements:
 | Schema class mapping (50 → 8 collapse) | ✅ Done | anchored, shared by 2 datasets |
 | Merge → dedup → stratified split | ✅ Done | greedy de-chained dedup; `data/processed/` produced |
 | `validate` (label sanity + leakage) | ✅ Done | **PASS** (leak threshold = dedup threshold) |
-| Balance / copy-paste augmentation | ✅ Done (run on real data) | same-domain **+ cross-domain surface_synth**, train-only |
+| Balance / copy-paste augmentation | ✅ Available | same-domain + cross-domain `surface_synth` (train-only); `surface_synth` **set to zero for next run** now that real surface-military exists — current build is real-only |
 | Training wrapper (`src/train/train.py`) | 🟡 Built, **not run** | needs GPU + Ultralytics + weights |
 | Eval / military-recall gate (`src/eval/metrics.py`) | 🟡 Built, **not run** | runs after training |
 | Real inference path (`predict()` non-stub) | 🔴 Not started | `NotImplementedError` placeholder |
@@ -51,13 +51,14 @@ Against the two core competition requirements:
 
 ### 2.1 Datasets in use
 
-All three are **Roboflow YOLO exports** placed in `data/raw/<name>/` (git-ignored).
+All four are **Roboflow YOLO exports** placed in `data/raw/<name>/` (git-ignored).
 
 | Dataset (folder) | Domain | Source (Roboflow) | Ver | Licence (as declared) | Raw imgs |
 |---|---|---|---|---|---:|
 | `seaships` | surface | `ship-detection-cedpa/seaships-spcag` | 1 | CC BY 4.0 | 6,979 |
 | `military_ships` | aerial | `hanif-noer-r/military-ships` | 1 | CC BY 4.0 | 2,746 |
 | `shiprsimagenet` | aerial | `convertvoctoyolo/shiprsimagenet` | 39 | CC BY 4.0 | 4,579 |
+| `military_surface` | surface | `hannah-agkvq/military-ship-detection-qxv5m` | 2 | CC BY 4.0 | 3,011 |
 
 > ⚠️ **Licence caveat:** the Roboflow exports each declare **CC BY 4.0**, but the
 > *original* SeaShips and ShipRSImageNet datasets are academic-use-only. Do not
@@ -100,26 +101,28 @@ Collapse of the 50 fine types:
 
 Boxes written per source (converter output → `data/interim/`, after Medical Ship
 → null): `seaships` 9,198 (6,979 imgs) · `military_ships` 11,208 (2,641 imgs) ·
-`shiprsimagenet` 34,299 (4,535 imgs).
+`shiprsimagenet` 34,299 (4,535 imgs) · `military_surface` 3,713 (3,000 imgs).
 
 After merge (**greedy** dedup at threshold 3 + stratified 70/20/10, seed 42):
-**14,155 collected → 3,583 near-duplicates dropped → 10,572 kept** (25.3% drop —
-see §2.4 for the de-chaining that lowered this from 46%).
+**17,155 collected → 3,655 near-duplicates dropped → 13,500 kept** (21.3% drop —
+see §2.4 for the de-chaining). Of the 3,655 drops, only **72** were from the new
+`military_surface` set, and **all 72 matched other `military_surface` frames**
+(internal Roboflow near-dupes) — none collapsed against the aerial sets.
 
-**Split sizes:** train **7,403** · val **2,114** · test **1,055**.
+**Split sizes:** train **9,452** · val **2,699** · test **1,349**.
 
 **Per-class images by split:**
 
 | Class | train | val | test |
 |---|---:|---:|---:|
-| container_ship | 984 | 280 | 136 |
-| tanker | 349 | 99 | 48 |
-| cargo | 3,947 | 1,163 | 574 |
-| passenger_ferry | 421 | 111 | 63 |
+| container_ship | 982 | 278 | 140 |
+| tanker | 348 | 101 | 47 |
+| cargo | 3,964 | 1,158 | 562 |
+| passenger_ferry | 414 | 122 | 59 |
 | yacht | 273 | 78 | 39 |
-| speedboat | 504 | 135 | 66 |
-| fishing_boat | 836 | 225 | 113 |
-| **military_vessel** | **3,721** | **1,079** | **528** |
+| speedboat | 502 | 138 | 65 |
+| fishing_boat | 818 | 244 | 112 |
+| **military_vessel** | **5,768** | **1,653** | **835** |
 
 **Per-domain × per-class (images, summed over splits):**
 
@@ -132,17 +135,25 @@ see §2.4 for the de-chaining that lowered this from 46%).
 | yacht | 390 | 0 | 390 |
 | speedboat | 705 | 0 | 705 |
 | fishing_boat | 246 | 928 | 1,174 |
-| **military_vessel** | **5,328** | **0** | **5,328** |
-| **TOTAL** | **10,948** | **4,824** | **15,772** |
+| **military_vessel** | **5,328** | **2,928** | **8,256** |
+| **TOTAL** | **10,948** | **7,752** | **18,700** |
 
 _(An image with multiple classes counts once per class, so totals exceed the
-10,572 kept images. Per-image domain map is written to
+13,500 kept images. Per-image domain map is written to
 `data/processed/domains.json`.)_
 
-**Synthetic surface-military (`balance.py`, cross-domain, TRAIN only):** ~380
-`surface_synth` images adding **~572 military instances** on surface backgrounds
-(real military instances in train: aerial **18,959**, surface **0**). Tagged
-`surface_synth` in `domains.json` so their effect is reportable and reversible.
+**Real surface-military (NEW, `military_surface`):** `military_vessel` now has real
+frontal warship coverage in **all three splits** — surface `military_vessel`
+**instances** by split: train **2,541** / val **722** / test **371** (images
+2,050 / 585 / 293). This is the first time the >0.90 gate can be measured on the
+**surface** domain: the held-out test split now holds **371 real surface-military
+instances** (293 images), vs **0** before.
+
+**Synthetic `surface_synth` — set to zero for the next run.** Real frontal warships
+supersede the cross-domain copy-paste stopgap, so `balance.py`'s cross-domain
+generation is disabled for the next training build; the current `data/processed/`
+is **real-only** (no `surface_synth`). The synth code is retained and toggleable for
+ablation/comparison — see the decision log.
 
 ### 2.4 Key findings
 
@@ -164,11 +175,13 @@ _(An image with multiple classes counts once per class, so totals exceed the
   civilian coverage roughly tripled (e.g. cargo surface 1,053 → 3,047). Dedup runs
   **before** the split; greedy guarantees no two kept images are within threshold,
   so nothing leaks. Configurable in `schema.yaml` (`dedup.method`/`.threshold`).
-- **Synthetic surface-military + leak guard.** `military_vessel` has zero real
-  surface examples, so `balance.py` pastes aerial military crops onto surface
-  (SeaShips) backgrounds → `surface_synth`, TRAIN only. Because a small paste
-  barely changes the background hash, each candidate is hashed and **dropped if it
-  near-duplicates a val/test image** (same threshold), keeping the gate honest.
+- **Synthetic surface-military + leak guard (now superseded by real data).** When
+  `military_vessel` had zero real surface examples, `balance.py` pasted aerial
+  military crops onto surface (SeaShips) backgrounds → `surface_synth`, TRAIN only,
+  with a leak guard (each candidate hashed and **dropped if it near-duplicates a
+  val/test image**, same threshold). With `military_surface` now supplying real
+  surface warships, this generation is **set to zero for the next run**; the code +
+  leak guard stay toggleable for ablation.
 - **One duplicate threshold everywhere.** merge dedup, `validate`'s leakage check,
   and the `balance` synth guard all read `schema.dedup.threshold`, so "duplicate"
   means the same thing in all three (otherwise validate false-alarms on pairs
@@ -239,14 +252,14 @@ _(An image with multiple classes counts once per class, so totals exceed the
 
 ## 4. Known gaps & risks
 
-- **🔴 No REAL surface-military data (0 real surface instances).** Every real
-  `military_vessel` box is aerial; SeaShips (surface) has no military. `balance.py`
-  now injects ~572 **synthetic** `surface_synth` military instances (train only) as
-  a stopgap, but these are pasted composites, not real frontal warships — a real
-  frontal-view military ship at test time is still out-of-distribution.
-  **Highest-priority data gap.** Real fix: source frontal military imagery (planned
-  Custom RMN set, Roboflow frontal warship sets). The `surface_synth` tag lets P2
-  train with/without it and disable it if it hurts.
+- **🟢 Surface-military data — RESOLVED (was the highest-priority gap).** The
+  `military_surface` set adds **real** frontal warship imagery: `military_vessel` now
+  has surface coverage in all three splits (test: 371 real instances / 293 images),
+  so the gate can finally be measured on the surface domain. The synthetic
+  `surface_synth` copy-paste stopgap is set to zero for the next run (real frontal
+  warships supersede it); the code stays toggleable for ablation. Remaining follow-up:
+  a baseline retrain on this data, then re-measure the surface gate (currently
+  PENDING — `models/baseline_best.pt` predates this set).
 - **🟡 Thin / zero classes on the surface side:** `tanker`, `yacht`, `speedboat` have
   **0 surface** instances; `yacht` (390) is the thinnest overall. Surface civilian
   coverage improved a lot after de-chaining (cargo 3,047, container 606, fishing 928
@@ -268,9 +281,12 @@ _(An image with multiple classes counts once per class, so totals exceed the
 ## 5. Next steps
 
 **P1 — Data (critical path).** _(Done: DATASETS.md reconciled; dedup de-chained +
-audited; Medical Ship → null; cross-domain `surface_synth` copy-paste built & run.)_
-1. Source **REAL** frontal/surface military imagery (Custom RMN + Roboflow frontal
-   warship sets) — `surface_synth` is only a stopgap.
+audited; Medical Ship → null; `surface_synth` copy-paste built; **real
+surface-military `military_surface` added → `surface_synth` set to zero for next
+run**.)_
+1. ✅ Real frontal/surface military imagery sourced (`military_surface`; test now has
+   371 real surface-military instances). Optional: more frontal warship sets / Custom
+   RMN for the bonus fine-grained track.
 2. Decide whether SeaShips near-adjacent frames need **scene/group-aware splitting**
    (vs the current distance-threshold dedup) before final training.
 
@@ -320,6 +336,7 @@ audited; Medical Ship → null; cross-domain `surface_synth` copy-paste built & 
 | 2026-07-25 | **One duplicate threshold** across merge / validate / balance guard (`schema.dedup.threshold`) | A conservative dedup threshold below validate's old fixed 5 caused false leakage alarms; unifying the definition keeps them consistent |
 | 2026-07-26 | **Scene-aware split deferred until pre-submission** | SeaShips is video-derived; at dedup threshold 3, near-adjacent frames (hamming 4–5) count as distinct and can split across train/test, slightly inflating civilian-surface metrics (military/aerial largely unaffected). Accepted for the BASELINE run; scene-aware (group-by-source-video) splitting is REQUIRED before any numbers enter the technical brief. Owner: P1; trigger: before the final training run / any brief numbers |
 | 2026-07-27 | **Gate currently validated on AERIAL military only** (test military recall **0.929**, PASS) | The test split has **0 real surface-military** instances (`surface_synth` is train-only), so the >0.90 gate is measured entirely on aerial. `conf_military` sweep clears 0.90 across 0.05–0.30 (0.25–0.30 = lowest-precision-cost point above gate). Real held-out **surface/frontal military imagery is REQUIRED** before the gate can be claimed for the frontal domain. Owner: P1; trigger: before the technical brief. Eval: `src/eval/detail.py` → `outputs/eval/test_eval.md` |
+| 2026-07-27 | **Real surface-military data added (`military_surface`); `surface_synth` reduced to zero for the next run** | Real frontal warship imagery (`hannah-agkvq/military-ship-detection-qxv5m` v2, CC BY 4.0, surface) now supplies `military_vessel` on the surface domain in all three splits (test: 371 instances / 293 images). Real frontal warships supersede the cross-domain copy-paste stopgap, so `balance.py`'s `surface_synth` generation is disabled for the next training build (current `data/processed/` is real-only). Synth code retained/toggleable for comparison. Only 72/3,000 dropped in dedup, all internal — no aerial collapse. Owner: P1 |
 
 ---
 

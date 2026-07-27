@@ -11,11 +11,12 @@ detects vessels across two visual domains — **frontal/surface** camera views a
 
 ## Status
 - [x] Phase 0 — repo scaffold, contracts, stub predictor, GUI skeleton
-- [x] Datasets: `military_ships` + `seaships` + `shiprsimagenet` downloaded (Roboflow YOLO)
+- [x] Datasets: `military_ships` + `seaships` + `shiprsimagenet` + `military_surface` (Roboflow YOLO)
 - [x] Data pipeline: remap → unified schema, **greedy dedup**, class×domain split, `validate` PASS
-      (10,572 imgs kept; train 7,403 / val 2,114 / test 1,055 — see `docs/PROGRESS.md`)
-- [x] Surface-military stopgap: cross-domain copy-paste → `surface_synth` (train only)
-      — ⚠️ synthetic; real frontal military imagery still the priority
+      (13,500 imgs kept; train 9,452 / val 2,699 / test 1,349 — see `docs/PROGRESS.md`)
+- [x] **Surface-military gap CLOSED** with real frontal warships (`military_surface`):
+      `military_vessel` now in all 3 splits on surface (test: 371 real instances / 293 imgs).
+      `surface_synth` copy-paste set to zero for the next run (code retained/toggleable)
 - [ ] Baseline training (`yolo11m`, HBB) — **PENDING** (no GPU run yet)
 - [ ] Evaluation harness + military recall gate report — built, not run
 - [ ] Real inference path in `predict()`
@@ -93,14 +94,16 @@ export $(grep -v '^#' .env | xargs)      # Windows PS: $env:ROBOFLOW_API_KEY="..
 python scripts/download_military_ships.py
 python scripts/download_seaships.py
 python scripts/download_shiprsimagenet.py
+python scripts/download_military_surface.py
 ```
 
 **Verify:**
 ```bash
-find data/raw/military_ships -name "*.jpg" | wc -l    # ~2.7k
-find data/raw/seaships -name "*.jpg" | wc -l          # ~7k
-find data/raw/shiprsimagenet -name "*.jpg" | wc -l    # ~4.6k
-cat data/raw/seaships/data.yaml                       # check class name strings
+find data/raw/military_ships -name "*.jpg" | wc -l     # ~2.7k
+find data/raw/seaships -name "*.jpg" | wc -l           # ~7k
+find data/raw/shiprsimagenet -name "*.jpg" | wc -l     # ~4.6k
+find data/raw/military_surface -name "*.jpg" | wc -l   # ~3.0k
+cat data/raw/seaships/data.yaml                        # check class name strings
 ```
 
 ### Datasets currently in use
@@ -109,6 +112,7 @@ cat data/raw/seaships/data.yaml                       # check class name strings
 | `military_ships` | aerial | ~2.7k | YOLO (Roboflow) | `hanif-noer-r/military-ships` v1 | CC BY 4.0 |
 | `seaships` | surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 | CC BY 4.0 |
 | `shiprsimagenet` | aerial | ~4.6k | YOLO (Roboflow) | `convertvoctoyolo/shiprsimagenet` v39 | CC BY 4.0¹ |
+| `military_surface` | **surface** | ~3.0k | YOLO (Roboflow) | `hannah-agkvq/military-ship-detection-qxv5m` v2 | CC BY 4.0 |
 
 All arrive **already in YOLO format** with their own `train/valid/test` split —
 that split is **discarded**; `merge.py` does its own stratified split. The Roboflow
@@ -118,34 +122,40 @@ provenance and licences: `data/DATASETS.md`.
 _¹ the Roboflow re-export declares CC BY 4.0; the underlying ShipRSImageNet is
 academic-use-only — attribute both, don't claim commercial rights._
 
-> **Known gaps:** `military_vessel` has **0 real surface** instances (all aerial) —
-> the top data gap; `tanker`/`yacht`/`speedboat` have 0 surface too. `surface_synth`
-> copy-paste is a stopgap; real frontal military imagery is still needed.
+> **Surface-military gap — closed.** `military_surface` is the first **real**
+> frontal-view warship set, giving `military_vessel` surface coverage in all three
+> splits (test: 371 real instances / 293 imgs), so the >90% gate can finally be
+> measured on frontal views. The old `surface_synth` copy-paste stopgap is set to
+> zero for the next run. Still thin on the surface side: `tanker`/`yacht`/`speedboat`
+> have 0 surface instances.
 
 ## 6. Build the unified dataset (P1)
 
-With the three sets in `data/raw/`, remap → merge → augment → validate:
+With the four sets in `data/raw/`, remap → merge → validate:
 
 ```bash
 # 1. remap each Roboflow set → data/interim/<name>/ (schema class IDs, HBB)
 python -m src.data.converters.yolo2yolo --dataset seaships
 python -m src.data.converters.yolo2yolo --dataset military_ships
 python -m src.data.converters.yolo2yolo --dataset shiprsimagenet
+python -m src.data.converters.yolo2yolo --dataset military_surface
 
 # 2. merge → greedy dedup → stratified class×domain split → data/processed/
 python -m src.data.merge                 # also regenerates configs/data.yaml
 
-# 3. close the surface-military gap (TRAIN only, tagged surface_synth)
-python -m src.data.balance --clean
-
-# 4. sanity-check labels + train/val/test leakage (exits nonzero on failure)
+# 3. sanity-check labels + train/val/test leakage (exits nonzero on failure)
 python -m src.data.validate
 ```
 
-Current build (seed 42, greedy dedup @ hamming 3): **10,572 images kept** from
-14,155 (25% near-duplicate drop), split train 7,403 / val 2,114 / test 1,055.
-Dedup method/threshold live in `configs/schema.yaml` (`dedup:`); a drop audit is
-written to `outputs/dedup_audit/`. Details + per-class tables: `docs/PROGRESS.md`.
+Current build (seed 42, greedy dedup @ hamming 3): **13,500 images kept** from
+17,155 (21% near-duplicate drop), split train 9,452 / val 2,699 / test 1,349.
+`military_vessel` now has real **surface** coverage in all three splits (test: 371
+instances). Dedup method/threshold live in `configs/schema.yaml` (`dedup:`); a drop
+audit is written to `outputs/dedup_audit/`. Per-class tables: `docs/PROGRESS.md`.
+
+> The build above is **real-only** — the `surface_synth` cross-domain copy-paste
+> (`python -m src.data.balance --clean`) is a stopgap kept for ablation but **set to
+> zero** now that real surface-military data exists. Enable it only for comparison.
 
 ---
 
@@ -154,7 +164,7 @@ written to `outputs/dedup_audit/`. Details + per-class tables: `docs/PROGRESS.md
 ## Ownership (team of 4)
 | Person | Owns | First task |
 |--------|------|-----------|
-| **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | ✅ remap+merge done → next: source real surface-military data |
+| **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | ✅ 4 sets remapped+merged, real surface-military added → next: support P2's retrain |
 | **P2** | Model training — `src/train/`, augmentation, baseline | Training wrapper over Ultralytics |
 | **P3** | Integration + GUI — `src/inference/`, `app/`, `src/eval/` | Build GUI against `--stub` |
 | **P4** | Deliverables + bonus — brief/video/poster, `src/fine_grained/`, OBB | Start RMN image collection |
@@ -236,21 +246,27 @@ Deliberately coarse — fragmenting military into many ship types collapses reca
 
 ## Results
 
-Baseline `yolo11m` (`models/baseline_best.pt`), **held-out TEST split** (1,055 imgs),
-greedy VOC@0.5 matching. Reproduce: `python -m src.eval.detail --weights
+> ⚠️ **These numbers predate the `military_surface` dataset.** They come from
+> `models/baseline_best.pt` evaluated on the **old** aerial-only test split (1,055
+> imgs). The current build adds real surface-military (test now 1,349 imgs incl. 371
+> surface-military instances), so a **retrain + re-eval is PENDING** — that's when
+> the *surface* gate gets its first real number.
+
+Baseline `yolo11m` (`models/baseline_best.pt`), held-out TEST split, greedy VOC@0.5
+matching. Reproduce on the current build: `python -m src.eval.detail --weights
 models/baseline_best.pt --split test` (full tables in `outputs/eval/test_eval.md`).
 
-**The gate — military recall (per domain):**
+**The gate — military recall (per domain), pre-surface build:**
 
 | Domain | Military recall (conf 0.10) | Gate >0.90 |
 |--------|----------------------------:|:----------:|
 | aerial | 0.929 | ✅ |
-| surface | — *(no real surface-military in test¹)* | — |
-| **overall** | **0.929** | ✅ **PASS** |
+| surface | — *(no real surface-military in the OLD test split¹)* | — |
+| **overall** | **0.929** | ✅ **PASS (aerial only)** |
 
-_¹ `military_vessel` has 0 real surface instances; `surface_synth` is train-only.
-So the gate is currently validated on the **aerial domain only** — see the decision
-log in `docs/PROGRESS.md`._
+_¹ At eval time `military_vessel` had 0 real surface instances. The
+`military_surface` set (now merged) fixes this; the surface gate will be measured
+after the retrain — see the decision log in `docs/PROGRESS.md`._
 
 **`conf_military` threshold sweep** (military_vessel) — recall clears 0.90 across the
 whole range; ~0.25–0.30 is the lowest-precision-cost operating point still above gate:
