@@ -17,8 +17,8 @@ detects vessels across two visual domains — **frontal/surface** camera views a
 - [x] **Surface-military gap CLOSED** with real frontal warships (`military_surface`):
       `military_vessel` now in all 3 splits on surface (test: 371 real instances / 293 imgs).
       `surface_synth` copy-paste set to zero for the next run (code retained/toggleable)
-- [ ] Baseline training (`yolo11m`, HBB) — **PENDING** (no GPU run yet)
-- [ ] Evaluation harness + military recall gate report — built, not run
+- [x] Baseline training (`yolo11m`, HBB, 100 epochs) — **DONE** (RTX 3060, local)
+- [x] Evaluation harness + military recall gate report — **PASS** (0.904, real surface+aerial)
 - [ ] Real inference path in `predict()`
 - [ ] GUI: box drawing + video playback
 - [ ] Bonus: oriented boxes (OBB)
@@ -246,39 +246,51 @@ Deliberately coarse — fragmenting military into many ship types collapses reca
 
 ## Results
 
-> ⚠️ **These numbers predate the `military_surface` dataset.** They come from
-> `models/baseline_best.pt` evaluated on the **old** aerial-only test split (1,055
-> imgs). The current build adds real surface-military (test now 1,349 imgs incl. 371
-> surface-military instances), so a **retrain + re-eval is PENDING** — that's when
-> the *surface* gate gets its first real number.
+Baseline `yolo11m`, 100 epochs, trained 2026-07-28 (RTX 3060, local) on the current
+build — **the first run to include real surface-military data** (`military_surface`,
+371 real instances in TEST). `models/baseline_best.pt`, gate scored on the held-out
+**TEST** split via `python -m src.eval.metrics` (Ultralytics val pass, `conf_military
+= 0.10`).
 
-Baseline `yolo11m` (`models/baseline_best.pt`), held-out TEST split, greedy VOC@0.5
-matching. Reproduce on the current build: `python -m src.eval.detail --weights
-models/baseline_best.pt --split test` (full tables in `outputs/eval/test_eval.md`).
+**The gate — military recall, real surface+aerial combined:**
 
-**The gate — military recall (per domain), pre-surface build:**
+| | Military recall (conf 0.10) | Gate >0.90 |
+|---|----------------------------:|:----------:|
+| **overall (TEST)** | **0.904** | ✅ **PASS** |
 
-| Domain | Military recall (conf 0.10) | Gate >0.90 |
-|--------|----------------------------:|:----------:|
-| aerial | 0.929 | ✅ |
-| surface | — *(no real surface-military in the OLD test split¹)* | — |
-| **overall** | **0.929** | ✅ **PASS (aerial only)** |
+Per-class recall (TEST, same pass):
 
-_¹ At eval time `military_vessel` had 0 real surface instances. The
-`military_surface` set (now merged) fixes this; the surface gate will be measured
-after the retrain — see the decision log in `docs/PROGRESS.md`._
+| Class | Recall |
+|---|---:|
+| cargo | 0.934 |
+| container_ship | 0.892 |
+| tanker | 0.872 |
+| **military_vessel** | **0.904** |
+| fishing_boat | 0.815 |
+| yacht | 0.769 |
+| passenger_ferry | 0.768 |
+| speedboat | 0.384 ⚠️ |
 
-**`conf_military` threshold sweep** (military_vessel) — recall clears 0.90 across the
-whole range; ~0.25–0.30 is the lowest-precision-cost operating point still above gate:
+Overall (all classes, TEST, conf 0.10): precision 0.841, recall 0.792, **mAP50 0.851**,
+**mAP50-95 0.651**.
 
-| conf | recall | precision | gate |
-|-----:|-------:|----------:|:----:|
-| 0.10 | 0.929 | 0.737 | ✅ |
-| 0.25 | 0.910 | 0.861 | ✅ |
-| 0.30 | 0.901 | 0.881 | ✅ |
+> ⚠️ **`speedboat` recall (0.384) is low and worth investigating** — not part of the
+> military gate, but flagged here rather than left silent.
 
-mAP50 / mAP50-95 are **PENDING** (this harness reports recall/precision at operating
-thresholds, not mAP; run `python -m src.eval.metrics` for the Ultralytics mAP pass).
+> **Per-domain (aerial vs. surface) breakdown — INCOMPLETE.** `src/eval/detail.py`
+> (the `conf_military` threshold sweep + per-domain recall table) hit repeated,
+> non-deterministic crashes tonight (GPU: a `cudnn`/`predict()`-path OOM requesting
+> ~33GB on a 12GB card; CPU: intermittent native access-violation crashes) — bisected
+> down to specific images, which then passed clean on retry, so this looks
+> environmental (likely tied to a remote-session/display-context change on the
+> training machine) rather than a data or code bug. The **canonical gate number above
+> (0.904, via `metrics.py`/`model.val()`) is unaffected** — that pass completed
+> cleanly. Still pending: **surface-only** and **aerial-only** military recall
+> specifically (the whole reason `military_surface` was added), and the
+> `conf_military` sweep table. Rerun `python -m src.eval.detail --weights
+> models/baseline_best.pt --split test --device cpu` (or `--device 0`) once back at
+> the machine; chunk with `--start`/`--end`/`--dump` + `--from-dumps` if it's still
+> flaky.
 
 ---
 
