@@ -4,7 +4,7 @@
 # `python -m src.data.merge --data-yaml-only`). CI asserts these match.
 # =============================================================================
 
-path: data/processed
+path: data\processed
 train: images/train
 val: images/val
 test: images/test

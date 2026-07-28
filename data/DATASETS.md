@@ -25,12 +25,24 @@ kept boxes are dropped; polygon labels enveloped to horizontal boxes). Added by
 P1, 2026-07-25; `military_surface` added 2026-07-27._
 
 ### Merged split (`data/processed/`, seed 42, greedy dedup @ threshold 3)
-- Collected 14,155 → **3,583 near-duplicates dropped (25.3%)** → **10,572 kept**.
-- Split: train **7,403** · val **2,114** · test **1,055**.
-- `military_vessel`: train 3,721 · val 1,079 · test 528 (all real, aerial).
-- Synthetic **surface-military** (cross-domain copy-paste, `balance.py`): ~380
-  images / ~572 military instances tagged `surface_synth` in `domains.json`,
-  **train split only** (with a val/test near-duplicate leak guard).
+_Rebuilt from scratch 2026-07-28 with `military_surface` included and
+cross-domain `surface_synth` copy-paste **disabled** (real surface-military
+data now exists — see below)._
+- Collected 17,155 → **3,655 near-duplicates dropped (21.3%)** → **13,500 kept**.
+- Split: train **9,452** · val **2,699** · test **1,349**.
+- `military_vessel` (images): train 5,768 · val 1,653 · test 835 — now a mix of
+  aerial + real surface, not aerial-only.
+- `military_vessel` by domain (boxes / images):
+  | split | aerial boxes | aerial imgs | surface boxes | surface imgs |
+  |---|---:|---:|---:|---:|
+  | train | 19,058 | 3,718 | 2,541 | 2,050 |
+  | val   | 5,422  | 1,068 | 722   | 585   |
+  | test  | 2,633  | 542   | **371** | 293   |
+- Synthetic **surface-military** cross-domain copy-paste (`balance.py`): **0** —
+  ran with `--no-cross-domain` this build since `military_surface` supplies
+  real frontal-view military data (371 real surface-military boxes now sit in
+  TEST, unaugmented). Re-enable in `configs/train_baseline.yaml`
+  (`balance.cross_domain.enabled`) if surface recall needs a further boost.
 
 > ✅ **Dedup note (de-chained):** the old single-linkage clustering dropped 46%
 > (6,545), but ~78% of that was **transitive chaining** (largest cluster ≈ 2,961
