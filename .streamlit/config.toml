@@ -1,0 +1,15 @@
+# Project Guardian — maritime/naval theme (deep navy + steel).
+# Tweak colours here, not in app.py.
+[theme]
+base = "dark"
+primaryColor = "#38bdf8"           # steel/sonar blue — buttons, sliders
+backgroundColor = "#0a1220"        # deep navy
+secondaryBackgroundColor = "#122135"  # panels, sidebar, tables
+textColor = "#e6edf6"
+font = "sans serif"
+
+[server]
+maxUploadSize = 400                # MB — demo videos can be chunky
+# The source watcher walks torch.classes and segfaults the server on macOS, and
+# a mid-demo auto-rerun is not wanted anyway. Restart manually after edits.
+fileWatcherType = "none"

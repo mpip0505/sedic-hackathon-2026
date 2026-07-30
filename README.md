@@ -19,8 +19,8 @@ detects vessels across two visual domains — **frontal/surface** camera views a
       `surface_synth` copy-paste set to zero for the next run (code retained/toggleable)
 - [x] Baseline training (`yolo11m`, HBB, 100 epochs) — **DONE** (RTX 3060, local)
 - [x] Evaluation harness + military recall gate report — **PASS** (0.904, real surface+aerial)
-- [ ] Real inference path in `predict()`
-- [ ] GUI: box drawing + video playback
+- [x] Real inference path in `predict()` (Ultralytics, per-class thresholds)
+- [x] GUI: box drawing, live thresholds, video tracking + CSV detection log
 - [ ] Bonus: oriented boxes (OBB)
 - [ ] Bonus: fine-grained RMN-vs-foreign 2nd stage
 - [ ] Deliverables: technical brief, video, poster
@@ -71,7 +71,8 @@ correctly** — it exercises the schema, the config loader, and the frozen contr
 ```bash
 streamlit run app/app.py
 ```
-Opens the GUI at `localhost:8501` with stub mode on. No model needed.
+Opens the GUI at `localhost:8501`. With no weights present it starts in **stub
+mode** — no model needed. Full usage: see **Running the GUI** below.
 
 ---
 
@@ -159,6 +160,96 @@ audit is written to `outputs/dedup_audit/`. Per-class tables: `docs/PROGRESS.md`
 
 ---
 
+# 🖥️ Running the GUI
+
+`app/app.py` is the demo interface: upload an image or video, get colour-coded
+boxes, a live summary, and (for video) tracked IDs plus a downloadable detection
+log. It talks **only** to `predict()` / `track_video()` — it never imports
+Ultralytics itself.
+
+```bash
+streamlit run app/app.py                 # venv must have ultralytics + streamlit
+```
+
+Opens `localhost:8501`. It loads `models/baseline_best.pt` by default and warms
+the weights at startup, so the first upload is already fast.
+
+## The controls
+
+| Sidebar control | What it does |
+|---|---|
+| **Stub mode** | Synthetic detections, no model. Auto-on if weights are missing — the fallback if anything breaks on demo day |
+| **Weights (.pt)** | Path to the model. Defaults to `models/baseline_best.pt` |
+| **Confidence — civilian** | Threshold for the 7 non-military classes |
+| **Confidence — military** | Threshold for `military_vessel` — **the recall knob** |
+| **Tracker** | `botsort.yaml` (stable IDs) or `bytetrack.yaml` (faster). Video only |
+| **Frame stride** | Process every Nth frame. Raise it if playback drags |
+| **Max frames** | Safety stop so a long clip can't stall a live demo |
+
+Images run **automatically** on upload and re-run on every slider move — no
+button. Video needs an explicit *▶ Run detection on video*.
+
+## Using the thresholds
+
+The two sliders are independent, which is the whole point: **military gets its
+own, lower threshold** so we catch warships at the cost of some false alarms.
+That asymmetry is the competition gate, not an oversight.
+
+| Setting | Effect | Use it for |
+|---|---|---|
+| Military **0.10**, civilian 0.25 | Max recall (0.942 on test), more false positives | The **gate posture** — matches `predict()`'s default and the eval numbers |
+| Military **0.25**, civilian 0.25 | Recall 0.921 at precision 0.888 | The **GUI default** — cleanest picture for a live demo |
+| Military **0.30+** | Recall drifts toward the 0.90 floor | Only to show the tradeoff; don't ship it |
+| Military **above** civilian | Inverts the priority — the sidebar warns you | Illustrating *why* the asymmetry exists |
+
+**How to feel it:** load an image with a borderline vessel and drag the military
+slider from 0.50 down to 0.05. Boxes, counts and the red banner update live;
+results are cached per threshold, so sliding back and forth is instant.
+
+**The GUI can't tell you whether you're still above the gate** — it's
+qualitative. For the actual recall/precision numbers, sweep with the evaluator:
+
+```bash
+# dump predictions once, then re-score at any thresholds for free
+python -m src.eval.detail --weights models/baseline_best.pt --split val \
+    --thresholds 0.05,0.10,0.15,0.20,0.25,0.30 --dump outputs/sweep_val.json
+python -m src.eval.detail --from-dumps outputs/sweep_val.json \
+    --thresholds 0.22,0.24,0.26,0.28 --md-out outputs/sweep.md
+
+# single pass/fail check (exits nonzero below 0.90)
+python -m src.eval.metrics --weights models/baseline_best.pt --split val --conf 0.10
+```
+
+Sweep on **val**; confirm the final pick once on **test**. Repeatedly tuning
+against test is how you end up reporting a number that won't survive Phase 2.
+
+## Video and the detection log
+
+Tracking runs through BoT-SORT, so each vessel keeps one ID across frames. The
+CSV export is the Qualifier-Clip deliverable format:
+
+```
+frame,timestamp_s,track_id,class,group,confidence,x1,y1,x2,y2
+```
+
+Untracked boxes (tracker not yet confirmed) leave `track_id` blank rather than
+writing `nan`.
+
+## Two things that will bite you
+
+- **Edits need a restart.** `.streamlit/config.toml` sets
+  `fileWatcherType = "none"` because the watcher walks `torch.classes` and
+  **segfaults the server** on macOS. `Ctrl+C` and re-run after changing `app.py`.
+- **Don't swap the results table back to `st.dataframe`.** It serializes through
+  pyarrow, which segfaults the whole process on some numpy/pyarrow combinations
+  (seen with pyarrow 25 + numpy 1.26). `render_table()` builds HTML on purpose —
+  a demo that can hard-crash on the results table isn't worth sortable columns.
+
+Both failures kill the server with no traceback; the browser just says it can't
+load the frontend. If you see that, check the terminal.
+
+---
+
 # 🤝 Working in this repo
 
 ## Ownership (team of 4)
@@ -166,7 +257,7 @@ audit is written to `outputs/dedup_audit/`. Per-class tables: `docs/PROGRESS.md`
 |--------|------|-----------|
 | **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | ✅ 4 sets remapped+merged, real surface-military added → next: support P2's retrain |
 | **P2** | Model training — `src/train/`, augmentation, baseline | Training wrapper over Ultralytics |
-| **P3** | Integration + GUI — `src/inference/`, `app/`, `src/eval/` | Build GUI against `--stub` |
+| **P3** | Integration + GUI — `src/inference/`, `app/`, `src/eval/` | ✅ real `predict()` + demo GUI done → next: Qualifier Clip log, Phase 2 rehearsal |
 | **P4** | Deliverables + bonus — brief/video/poster, `src/fine_grained/`, OBB | Start RMN image collection |
 
 ## Branches & PRs
@@ -215,6 +306,20 @@ predict(source, weights=None, conf=0.25, conf_military=0.10, stub=False)
 > `conf_military` is **deliberately lower** than `conf`. The competition gates on
 > military *recall*, so we accept more false positives to avoid misses. This is
 > intentional — don't "fix" it.
+
+The real (non-stub) path is implemented on top of Ultralytics: it runs at the
+**lower** of the two thresholds so nothing is dropped early, then applies the
+per-class rule (military at `conf_military`, everything else at `conf`) — that
+filter is what enforces the recall gate. Ultralytics/torch are imported **lazily**,
+so `--stub` still works with no torch installed.
+
+Additive helpers alongside the frozen pair (the frozen shapes are untouched):
+
+| Symbol | Purpose |
+|---|---|
+| `load_model(weights)` | Memoised YOLO loader; clear `FileNotFoundError` if weights are missing |
+| `class_groups()` | class name → `military`/`small_craft`/`civilian`, read from `schema.yaml` (the GUI's colours) |
+| `track_video(...)` | Streams `TrackedFrame`s with BoT-SORT/ByteTrack IDs — same per-class threshold rule |
 
 ## Structure
 ```
@@ -336,6 +441,14 @@ Create `.env` (step 5) and load it: `export $(grep -v '^#' .env | xargs)`.
 
 **Streamlit shows a blank page / import error**
 Confirm your venv is active (`(.venv)` in the prompt) and deps installed.
+
+**GUI dies mid-use: "Cannot load Streamlit frontend code"**
+The server process died — check the terminal. Known causes are the torch file
+watcher and pyarrow; see [Two things that will bite you](#two-things-that-will-bite-you).
+
+**`ModuleNotFoundError: No module named 'lap'` when running video**
+The tracker needs the assignment solver: `pip install lapx` (pinned in
+`requirements.txt`).
 
 **`.env` or `.venv/` shows up in `git status`**
 Stop — don't commit. Check `.gitignore` contains both, then

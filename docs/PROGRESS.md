@@ -14,8 +14,10 @@ The **data pipeline is built and has been run end-to-end on real data**; a clean
 deduplicated, stratified `data/processed/` split exists and passes validation. The
 **baseline has been trained (100 epochs, RTX 3060 local) and the military-recall
 gate has been measured** on the held-out test split, on the first build to include
-real surface-military data. Inference beyond the stub, the GUI beyond its skeleton,
-the bonus tracks, and all deliverables are not yet started.
+real surface-military data. The **real inference path and the presentation GUI are
+now built** — `predict()` runs the trained model, and `app/app.py` does live
+image/video detection with tracked IDs and a CSV detection log. The bonus tracks
+and all deliverables are not yet started.
 
 Against the two core competition requirements:
 
@@ -38,9 +40,9 @@ Against the two core competition requirements:
 | Balance / copy-paste augmentation | ✅ Available | same-domain + cross-domain `surface_synth` (train-only); `surface_synth` **set to zero** for the current build now that real surface-military exists |
 | Training wrapper (`src/train/train.py`) | ✅ **Done — run** | `yolo11m`, 100 epochs, RTX 3060 local, `models/baseline_best.pt` |
 | Eval / military-recall gate (`src/eval/metrics.py` + `src/eval/detail.py`) | ✅ **Done — run** | overall **0.904** PASS; per-domain aerial 0.940 / surface 0.954 PASS |
-| Real inference path (`predict()` non-stub) | 🔴 Not started | `NotImplementedError` placeholder |
-| Detection log on Qualifier Clip | 🔴 Not started | clip not yet provided |
-| GUI (`app/app.py`) | 🟡 Skeleton done (stub-wired) | no box drawing / video overlay yet |
+| Real inference path (`predict()` non-stub) | ✅ **Done** | Ultralytics-backed, lazy import, per-class thresholds; `--stub` unaffected |
+| Detection log on Qualifier Clip | 🟡 Mechanism ready | GUI exports `frame,timestamp_s,track_id,class,group,confidence,bbox` CSV; clip not yet provided |
+| GUI (`app/app.py`) | ✅ **Done** | box drawing, live thresholds, military alert, before/after, BoT-SORT video playback + CSV log |
 | Bonus: oriented boxes (OBB) | 🔴 Not started | HBB envelope in place as precursor |
 | Bonus: RMN-vs-foreign 2nd stage | 🔴 Not started | `src/fine_grained/` is an empty package |
 | Deliverables (brief / video / poster) | 🔴 Not started | |
@@ -207,8 +209,9 @@ ablation/comparison — see the decision log.
 - **`src/inference/predict.py`** — the frozen interface: a `Detection` dataclass
   (`class`, `confidence`, `bbox` [x1,y1,x2,y2] abs px, `frame`, `timestamp`) and
   `predict(source, weights, conf, conf_military, stub)`. `--stub` returns synthetic
-  detections in the exact real format **with no torch/weights**, so GUI and
-  integration work runs today. Real path is a documented `NotImplementedError`.
+  detections in the exact real format **with no torch/weights**. The real path is
+  now implemented (Ultralytics, lazy-imported); the frozen shapes are unchanged and
+  everything new — `load_model()`, `class_groups()`, `track_video()` — is additive.
 
 ### 3.2 `src/` modules
 
@@ -226,8 +229,9 @@ ablation/comparison — see the decision log.
 | `data/validate.py` | Label sanity (coords ∈ [0,1], class range, non-empty) + train/val/test leakage (threshold = `schema.dedup.threshold`); exits nonzero on failure |
 | `train/train.py` | Config-driven Ultralytics wrapper (`--config`, `--set`, `--resume`, `--dry-run`) |
 | `eval/metrics.py` | Per-class recall + the >90% military gate (keyword-only `split`) |
-| `inference/predict.py` | Frozen detection interface + working `--stub` |
-| `app/app.py` | Streamlit skeleton wired to `predict()` (stub toggle, sliders, military banner) |
+| `eval/detail.py` | `conf_military` sweep + per-domain × per-class recall; chunked collection (`--start`/`--end`/`--dump`/`--from-dumps`) |
+| `inference/predict.py` | Frozen detection interface + working `--stub` + real Ultralytics path + `track_video()` (BoT-SORT) |
+| `app/app.py` | Streamlit demo GUI: colour-coded boxes by schema group, live threshold sliders, military alert banner, metrics strip, before/after toggle, video tracking + CSV detection log |
 | `fine_grained/` | Empty package — bonus RMN-vs-foreign 2nd stage (not started) |
 
 ### 3.3 Safeguards built in
@@ -275,12 +279,18 @@ ablation/comparison — see the decision log.
   frames should count as leakage regardless, the fuller fix is **scene/group-aware
   splitting** (keep a scene's frames in one split) — a larger change, not yet done.
   Worth revisiting before final numbers go in the technical brief.
-- **⚪ No Qualifier Clip yet**, so the detection-log deliverable and real inference
-  path are unstarted; the GUI only runs in stub mode.
-- **⚪ Real inference path (`predict()` non-stub) not implemented.** The frozen
-  interface's real-model branch still raises `NotImplementedError`; `detail.py` and
-  `metrics.py` call Ultralytics directly for eval, but the GUI/consumer-facing path
-  doesn't exist yet.
+- **⚪ No Qualifier Clip yet.** The detection-log mechanism is built and tested (GUI
+  CSV export with tracked IDs), but it has only been exercised on a locally-made
+  test clip — the real clip hasn't been provided.
+- **🟡 GUI environment is fragile in two known ways, both worked around.** Streamlit's
+  file watcher segfaults walking `torch.classes` (disabled in `.streamlit/config.toml`
+  — edits need a manual restart), and `st.dataframe` segfaults inside pyarrow on some
+  numpy/pyarrow combinations (results tables are hand-built HTML instead). Both kill
+  the server process with no traceback, so anyone changing `app/app.py` should know
+  the symptom: "Cannot load Streamlit frontend code" in the browser.
+- **🟡 GUI runs at `conf_military = 0.25`, not the gate's 0.10.** The demo default
+  favours a clean picture (recall 0.921 / precision 0.888) over max recall (0.942 at
+  0.10). It's a slider, but the number quoted in the brief must be the 0.10 one.
 
 ---
 
@@ -303,11 +313,13 @@ overall 0.904, aerial 0.940, surface 0.954. See §1 and the decision log.)_
 2. If time allows: a second training run after scene/group-aware splitting (P1 item
    2) to check the gate holds under a stricter leakage definition.
 
-**P3 — Integration + GUI.**
-1. Implement the real `predict()` path (Ultralytics + per-class threshold filtering)
-   behind the frozen interface.
-2. Add box drawing + video overlay to `app/app.py`; wire the detection log
-   (`frame/timestamp/class/confidence/bbox`) for the Qualifier Clip.
+**P3 — Integration + GUI.** _(Done: real `predict()` path implemented behind the
+frozen interface; `app/app.py` rebuilt as the presentation GUI with box drawing,
+live thresholds, BoT-SORT video tracking and the CSV detection log.)_
+1. Run the detection log against the **Qualifier Clip** once it's provided — the
+   export format is already in place, only the clip is missing.
+2. Rehearse the Phase 2 live stress test: judge-supplied images/video through the
+   GUI, including the stub fallback if weights or the model ever fail to load.
 
 **P4 — Deliverables + bonus.**
 1. Start the Custom RMN image collection (feeds both the surface-military gap and the
@@ -346,6 +358,8 @@ overall 0.904, aerial 0.940, surface 0.954. See §1 and the decision log.)_
 | 2026-07-28 | **Baseline retrained (100 epochs, RTX 3060 local) on the real-surface build — gate PASSES at 0.904** | First run to include real surface-military data end to end. Two mid-run crashes, both resumed cleanly from checkpoint (not data/config issues): (1) `results.csv` locked by Excel opened to check progress — closed Excel, resumed; (2) an unrelated harness-side background-task timeout killed the process at epoch 7 — relaunched as a detached OS process, survived to completion. Gate (via `src/eval/metrics.py`, TEST split, `conf_military=0.10`): overall military recall **0.904** (PASS, >0.90), mAP50 0.851, mAP50-95 0.651. Per-class recall mostly 0.77–0.93; `speedboat` is a low outlier at 0.384 (not gate-relevant, flagged for follow-up). Owner: P2 |
 | 2026-07-28 | **`src/eval/detail.py` (conf sweep + per-domain aerial/surface recall) INCOMPLETE — deferred** | Repeated non-deterministic crashes on this run: GPU path hit a `cudnn`/`model.predict()` OOM (requested ~33GB on a 12GB card, same size every time regardless of batch/content); CPU path hit intermittent native access-violation crashes. Bisected a "failing" image range down to individual images that then passed clean on isolated retry and even on a straight retest of the original failing range — points to something environmental (a remote-session/display-context change on the machine mid-run is the leading theory) rather than a corrupt image or code bug. Two incidentally-oversized source images in `military_surface` (native res up to 6000×4000, unlike the rest of the dataset which is Roboflow-preprocessed to ≤2048px) were downsized in `data/processed` as a precaution but did not fix the crash, confirming they weren't the cause. The canonical gate (line above, via `metrics.py`) is unaffected — separate code path, completed cleanly. **TODO**: rerun `detail.py` (chunked via `--start`/`--end`/`--dump` + `--from-dumps` if still flaky) to get surface-only and aerial-only military recall specifically — the whole point of adding `military_surface`. Consider a defensive resize step in the data pipeline for any future oversized source images, since the frozen `predict()` interface could hit the same class of issue on a huge user-submitted photo. Owner: P1/P3 |
 | 2026-07-30 | **`src/eval/detail.py` root cause found + fixed; per-domain gate CLEARS on both domains (aerial 0.940, surface 0.954, overall 0.942)** | Root cause of the 2026-07-28 GPU OOM: `model.predict(stream=True, ...)` lets every single-image batch pick its own letterboxed shape (`auto=True` in Ultralytics' `pre_transform` whenever a batch's images share one shape, which single-image batches always do), and a long stream of differently-shaped images fragments/accumulates GPU memory until a normal-sized allocation fails — not a corrupt image (bisection showed identical slices OOM at *different* points depending only on how many images had already streamed in that process; the earlier "remote-session" theory doesn't hold, since it reproduced deterministically today back at the machine). Fixed by chunking collection into fresh-process slices via `--start`/`--end`/`--dump` (each fresh process resets the accumulation) then combining with `--from-dumps` — now the standard way to run this script on GPU; documented in the README. Also fixed a separate, unrelated bug: the final `print()` crashed with `UnicodeEncodeError` on Windows' cp1252 console default when printing the ✅/❌ markdown tables (after the report file was already written) — `sys.stdout.reconfigure(encoding="utf-8")` added. Results (test split, IoU 0.50): `conf_military` sweep clears the gate 0.05–0.30; per-domain military recall aerial 0.940, surface 0.954 (surface — the whole reason `military_surface` was added — actually scores *higher*), overall 0.942, all ✅ PASS. Full tables in `outputs/eval/test_eval.md` and the README `## Results` section. Owner: P1/P3 |
+| 2026-07-30 | **Real `predict()` path implemented + presentation GUI built** | `predict()`'s `NotImplementedError` branch replaced with the Ultralytics path: run at the **lower** of the two thresholds, then filter per class (military at `conf_military`, rest at `conf`) — that filter is what enforces the gate. Ultralytics/torch stay **lazy imports** so `--stub` still runs with no torch. The frozen `Detection`/`predict()` shapes are untouched; tracking is **additive** (`track_video()` → `TrackedFrame`/`TrackedDetection` with BoT-SORT IDs) rather than bent into the frozen contract, and `class_groups()` reads the GUI's colour grouping from `schema.yaml` so no class name is hardcoded in `app/`. GUI: colour-coded boxes (military red / small craft amber / civilian teal), military alert banner, per-group counts, metrics strip, before/after toggle, live threshold sliders (images re-run on slider move, cached per threshold), video playback with tracked IDs and a CSV detection log. Verified end to end in-browser on real weights. Owner: P3 |
+| 2026-07-30 | **GUI avoids `st.dataframe`; Streamlit file watcher disabled** | Two separate **SIGSEGV**s killed the whole server during GUI work — no Python traceback, browser just shows "Cannot load Streamlit frontend code". (1) Streamlit's source watcher walks `torch.classes` and crashes → `fileWatcherType = "none"` in `.streamlit/config.toml` (cost: manual restart after edits, which also prevents an accidental mid-demo rerun). (2) `st.dataframe` serializes via pyarrow, which segfaulted in `pandas_compat.convert_column` on pyarrow 25 + numpy 1.26 → results tables are hand-built HTML in `render_table()`. Diagnosed with `PYTHONFAULTHANDLER=1`, which is how you get a traceback out of a native crash. Both worked around rather than version-pinned, because a Phase 2 live stress test on someone else's machine must not depend on an exact pyarrow build. `lapx` (BoT-SORT's assignment solver) added to `requirements.txt`. Owner: P3 |
 
 ---
 
