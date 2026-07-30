@@ -277,20 +277,48 @@ Overall (all classes, TEST, conf 0.10): precision 0.841, recall 0.792, **mAP50 0
 > ⚠️ **`speedboat` recall (0.384) is low and worth investigating** — not part of the
 > military gate, but flagged here rather than left silent.
 
-> **Per-domain (aerial vs. surface) breakdown — INCOMPLETE.** `src/eval/detail.py`
-> (the `conf_military` threshold sweep + per-domain recall table) hit repeated,
-> non-deterministic crashes tonight (GPU: a `cudnn`/`predict()`-path OOM requesting
-> ~33GB on a 12GB card; CPU: intermittent native access-violation crashes) — bisected
-> down to specific images, which then passed clean on retry, so this looks
-> environmental (likely tied to a remote-session/display-context change on the
-> training machine) rather than a data or code bug. The **canonical gate number above
-> (0.904, via `metrics.py`/`model.val()`) is unaffected** — that pass completed
-> cleanly. Still pending: **surface-only** and **aerial-only** military recall
-> specifically (the whole reason `military_surface` was added), and the
-> `conf_military` sweep table. Rerun `python -m src.eval.detail --weights
-> models/baseline_best.pt --split test --device cpu` (or `--device 0`) once back at
-> the machine; chunk with `--start`/`--end`/`--dump` + `--from-dumps` if it's still
-> flaky.
+**`conf_military` threshold sweep** (test split, IoU 0.50, via `src/eval/detail.py`):
+
+| conf | recall | precision | gate >0.90 |
+|-----:|-------:|----------:|:----------:|
+| 0.05 | 0.952 | 0.726 | ✅ PASS |
+| **0.10** | **0.942** | 0.805 | ✅ PASS |
+| 0.15 | 0.933 | 0.846 | ✅ PASS |
+| 0.20 | 0.927 | 0.869 | ✅ PASS |
+| 0.25 | 0.921 | 0.888 | ✅ PASS |
+| 0.30 | 0.915 | 0.901 | ✅ PASS |
+
+**Per-domain military recall — the whole reason `military_surface` was added:**
+
+| domain | military recall | gate >0.90 |
+|--------|-----------------:|:----------:|
+| aerial | 0.940 | ✅ |
+| surface | 0.954 | ✅ |
+| **overall** | **0.942** | ✅ **PASS** |
+
+Both domains individually clear the gate — surface (real `military_surface` data)
+actually scores *higher* recall than aerial. `speedboat` (see warning above) is aerial-only
+in TEST (0.485) with no surface instances to average against, which is why it doesn't
+show up here as a gate risk despite the low number.
+
+<details>
+<summary>Note on `detail.py`'s numbers vs. the canonical gate (0.942 vs 0.904)</summary>
+
+`metrics.py`/`model.val()` (the canonical gate) and `detail.py` (this sweep) use
+different matching: Ultralytics' internal max-F1-point matching vs. this script's
+explicit greedy PASCAL-VOC @0.5 matching *at the actual `conf_military=0.10`
+operating point*. Both pass the gate; treat `metrics.py`'s 0.904 as the
+authoritative number and this table as the diagnostic breakdown.
+
+Getting this to run also required a real fix: `model.predict(stream=True, ...)`
+lets every image pick its own letterboxed shape (`auto=True` for single-image
+batches), and on a long GPU stream that fragments/accumulates until a normal-sized
+allocation OOMs partway through — not a bad image, confirmed by bisection (identical
+slices OOM at different points depending only on how many images had already
+streamed in-process). Fixed by chunking collection into fresh-process slices via
+`--start`/`--end`/`--dump`, then combining with `--from-dumps` — chunked collection
+is now the standard way to run this script on GPU.
+</details>
 
 ---
 

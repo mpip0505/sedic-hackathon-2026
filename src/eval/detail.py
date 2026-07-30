@@ -35,6 +35,7 @@ import gc
 import json
 import logging
 import pickle
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -220,7 +221,22 @@ def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
     in bounded foreground chunks (see --dump / --from-dumps); `limit` caps the
     total for a quick smoke test.
     """
+    import os
+    # Single-image batches hit predictor.pre_transform's auto=True "minimum
+    # rectangle" letterbox, so consecutive images rarely share a shape and each
+    # one can provoke a fresh cuDNN workspace allocation. Over a long stream on
+    # GPU these never get reused and the *reserved-but-unallocated* pool grows
+    # until a normal-sized allocation fails on fragmentation (not on total
+    # image size — confirmed by bisection: identical slices OOM at different
+    # points depending only on how many images already streamed in-process).
+    # expandable_segments lets the allocator extend/reuse existing segments
+    # instead of demanding a new contiguous block; must be set before any CUDA
+    # context (i.e. before importing ultralytics/torch) to take effect.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     from ultralytics import YOLO  # lazy: keep torch out of import time
+    is_cuda = str(device).lower() != "cpu"
+    if is_cuda:
+        import torch
 
     images_dir, labels_dir = _split_dirs(Path(data_yaml), split)
     processed_root = images_dir.parent.parent
@@ -268,6 +284,12 @@ def collect_predictions(weights: Path | str, data_yaml: Path | str, split: str,
         # and OOM-kill a long CPU pass. Drop refs and collect periodically so
         # peak RSS stays flat instead of scaling with the image count.
         del res, boxes
+        if is_cuda:
+            # Cheap relative to inference; the growth is front-loaded (new
+            # cuDNN workspace per never-repeated letterboxed shape), so
+            # clearing only every 50 images lets it OOM before the first
+            # clear ever fires. Clear every image instead.
+            torch.cuda.empty_cache()
         if n_done % 50 == 0:
             gc.collect()
             logger.info("  … %d/%d images", n_done, len(image_paths))
@@ -437,6 +459,11 @@ def _log_per_domain(res: DomainClassResult) -> None:
 # ---------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # Windows consoles default stdout to cp1252, which can't encode the ✅/❌
+    # markdown tables below; force utf-8 so this doesn't crash after the report
+    # (and the md file) are already written.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     p = argparse.ArgumentParser(
         prog="python -m src.eval.detail",
         description="conf_military threshold sweep + per-domain recall (CPU-friendly).",
