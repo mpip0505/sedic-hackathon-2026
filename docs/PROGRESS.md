@@ -1,10 +1,10 @@
 # Project Guardian — Progress Report
 
-_Last updated: 2026-07-25 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
+_Last updated: 2026-07-30 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
 
 This report reflects the **actual state of the repo** (code, configs, tests) as of
-the date above. No training has run yet, so all accuracy/recall numbers are marked
-**PENDING** — none are invented.
+the date above. The baseline has been trained and the military-recall gate has been
+measured on real, held-out test data — see §1 and the decision log for numbers.
 
 ---
 
@@ -12,16 +12,17 @@ the date above. No training has run yet, so all accuracy/recall numbers are mark
 
 The **data pipeline is built and has been run end-to-end on real data**; a clean,
 deduplicated, stratified `data/processed/` split exists and passes validation. The
-**training and evaluation wrappers are written but have not been executed** (no
-GPU / Ultralytics run yet). Inference beyond the stub, the GUI beyond its skeleton,
+**baseline has been trained (100 epochs, RTX 3060 local) and the military-recall
+gate has been measured** on the held-out test split, on the first build to include
+real surface-military data. Inference beyond the stub, the GUI beyond its skeleton,
 the bonus tracks, and all deliverables are not yet started.
 
 Against the two core competition requirements:
 
 | Requirement | Status |
 |---|---|
-| **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` now has **real surface** coverage via `military_surface` (2,928 surface imgs; test holds 371 real surface-military instances). The earlier `surface_synth` copy-paste stopgap is set to zero for the next run — see §2.3 / §4. |
-| **Recall > 90% on military classes** | Infrastructure ready (low `conf_military` threshold, gate measured on held-out **test** split, abort-if-zero-military). Actual recall **PENDING** (training not run). |
+| **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` now has **real surface** coverage via `military_surface` (2,928 surface imgs; test holds 371 real surface-military instances), and the gate has been measured on both domains independently — see below. |
+| **Recall > 90% on military classes** | ✅ **PASS.** Canonical gate (`metrics.py`, TEST, `conf_military=0.10`): **0.904** overall. Per-domain breakdown (`detail.py`): aerial **0.940**, surface **0.954**, overall **0.942** — both domains individually clear >0.90. |
 
 ### Pipeline checklist
 
@@ -34,9 +35,9 @@ Against the two core competition requirements:
 | Schema class mapping (50 → 8 collapse) | ✅ Done | anchored, shared by 2 datasets |
 | Merge → dedup → stratified split | ✅ Done | greedy de-chained dedup; `data/processed/` produced |
 | `validate` (label sanity + leakage) | ✅ Done | **PASS** (leak threshold = dedup threshold) |
-| Balance / copy-paste augmentation | ✅ Available | same-domain + cross-domain `surface_synth` (train-only); `surface_synth` **set to zero for next run** now that real surface-military exists — current build is real-only |
-| Training wrapper (`src/train/train.py`) | 🟡 Built, **not run** | needs GPU + Ultralytics + weights |
-| Eval / military-recall gate (`src/eval/metrics.py`) | 🟡 Built, **not run** | runs after training |
+| Balance / copy-paste augmentation | ✅ Available | same-domain + cross-domain `surface_synth` (train-only); `surface_synth` **set to zero** for the current build now that real surface-military exists |
+| Training wrapper (`src/train/train.py`) | ✅ **Done — run** | `yolo11m`, 100 epochs, RTX 3060 local, `models/baseline_best.pt` |
+| Eval / military-recall gate (`src/eval/metrics.py` + `src/eval/detail.py`) | ✅ **Done — run** | overall **0.904** PASS; per-domain aerial 0.940 / surface 0.954 PASS |
 | Real inference path (`predict()` non-stub) | 🔴 Not started | `NotImplementedError` placeholder |
 | Detection log on Qualifier Clip | 🔴 Not started | clip not yet provided |
 | GUI (`app/app.py`) | 🟡 Skeleton done (stub-wired) | no box drawing / video overlay yet |
@@ -254,12 +255,15 @@ ablation/comparison — see the decision log.
 
 - **🟢 Surface-military data — RESOLVED (was the highest-priority gap).** The
   `military_surface` set adds **real** frontal warship imagery: `military_vessel` now
-  has surface coverage in all three splits (test: 371 real instances / 293 images),
-  so the gate can finally be measured on the surface domain. The synthetic
-  `surface_synth` copy-paste stopgap is set to zero for the next run (real frontal
-  warships supersede it); the code stays toggleable for ablation. Remaining follow-up:
-  a baseline retrain on this data, then re-measure the surface gate (currently
-  PENDING — `models/baseline_best.pt` predates this set).
+  has surface coverage in all three splits (test: 371 real instances / 293 images).
+  The baseline has been retrained on this data and the gate measured on both domains
+  independently: aerial 0.940, surface 0.954 (surface actually scores *higher*). The
+  synthetic `surface_synth` copy-paste stopgap is set to zero for this build; the
+  code stays toggleable for ablation.
+- **🟡 `speedboat` recall is low (0.384 overall / 0.485 aerial-only in the per-domain
+  table)** — not part of the military gate, but flagged for follow-up. No surface
+  instances exist for this class, so it can't be cross-checked against a surface
+  number.
 - **🟡 Thin / zero classes on the surface side:** `tanker`, `yacht`, `speedboat` have
   **0 surface** instances; `yacht` (390) is the thinnest overall. Surface civilian
   coverage improved a lot after de-chaining (cargo 3,047, container 606, fishing 928
@@ -270,11 +274,13 @@ ablation/comparison — see the decision log.
   *kept* pair ≤ threshold (so leak-free by our definition), but if near-adjacent
   frames should count as leakage regardless, the fuller fix is **scene/group-aware
   splitting** (keep a scene's frames in one split) — a larger change, not yet done.
-- **⚪ Nothing trained or evaluated yet.** No mAP, no recall, no confusion matrix —
-  all **PENDING** a real Ultralytics run on GPU. The train→copy-weights→gate path is
-  built and unit-tested up to the `YOLO(...)` call, but **not exercised end-to-end**.
+  Worth revisiting before final numbers go in the technical brief.
 - **⚪ No Qualifier Clip yet**, so the detection-log deliverable and real inference
   path are unstarted; the GUI only runs in stub mode.
+- **⚪ Real inference path (`predict()` non-stub) not implemented.** The frozen
+  interface's real-model branch still raises `NotImplementedError`; `detail.py` and
+  `metrics.py` call Ultralytics directly for eval, but the GUI/consumer-facing path
+  doesn't exist yet.
 
 ---
 
@@ -282,20 +288,20 @@ ablation/comparison — see the decision log.
 
 **P1 — Data (critical path).** _(Done: DATASETS.md reconciled; dedup de-chained +
 audited; Medical Ship → null; `surface_synth` copy-paste built; **real
-surface-military `military_surface` added → `surface_synth` set to zero for next
-run**.)_
+surface-military `military_surface` added → `surface_synth` set to zero**; baseline
+retrained on this build and the gate cleared on both domains.)_
 1. ✅ Real frontal/surface military imagery sourced (`military_surface`; test now has
    371 real surface-military instances). Optional: more frontal warship sets / Custom
    RMN for the bonus fine-grained track.
 2. Decide whether SeaShips near-adjacent frames need **scene/group-aware splitting**
-   (vs the current distance-threshold dedup) before final training.
+   (vs the current distance-threshold dedup) before final numbers go in the brief.
 
-**P2 — Training.**
-1. Run the real baseline: `python -m src.train.train --config configs/train_baseline.yaml`
-   (yolo11m, 100 epochs, seed 42) on Colab/Kaggle GPU.
-2. Run `balance.py` first if military recall is short; report per-class recall from
-   the **test** gate.
-3. Populate the README/PROGRESS results tables with the first real numbers.
+**P2 — Training.** _(Done: baseline trained end to end, gate measured and PASSING —
+overall 0.904, aerial 0.940, surface 0.954. See §1 and the decision log.)_
+1. Investigate the low `speedboat` recall (0.384) — not gate-relevant but worth
+   understanding before the brief.
+2. If time allows: a second training run after scene/group-aware splitting (P1 item
+   2) to check the gate holds under a stricter leakage definition.
 
 **P3 — Integration + GUI.**
 1. Implement the real `predict()` path (Ultralytics + per-class threshold filtering)
@@ -343,6 +349,6 @@ run**.)_
 
 ---
 
-_Numbers here are from the current `data/processed/` build (seed 42). Regenerate this
-section after any re-merge or the first training run. Accuracy/recall remain PENDING
-until training is executed._
+_Data numbers here are from the current `data/processed/` build (seed 42); accuracy/
+recall numbers are from the baseline trained on that build (`models/baseline_best.pt`,
+2026-07-28). Regenerate this section after any re-merge or retrain._
