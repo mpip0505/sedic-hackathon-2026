@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import random
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,11 @@ logger = logging.getLogger(__name__)
 # Repo root = two levels up from src/inference/predict.py
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_PATH = _REPO_ROOT / "configs" / "schema.yaml"
+
+# Used when `weights` is None on the real path. Gitignored — see CLAUDE.md.
+DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "baseline_best.pt"
+
+VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm"}
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +110,34 @@ def _military_class_names(schema_path: Path | str = _SCHEMA_PATH) -> set[str]:
     return {classes[i] for i in military_ids}
 
 
+# Group precedence when a class belongs to more than one group (e.g. `yacht` is
+# both civilian and small_craft). Most operationally significant wins.
+_GROUP_PRECEDENCE = ("military", "small_craft", "civilian")
+
+
+def class_groups(schema_path: Path | str = _SCHEMA_PATH) -> dict[str, str]:
+    """Map each class name to ONE group name, resolved by `_GROUP_PRECEDENCE`.
+
+    Consumers (e.g. the GUI's colour coding) use this instead of hardcoding
+    which class is military/civilian — the grouping lives in schema.yaml.
+    """
+    with open(schema_path, "r", encoding="utf-8") as fh:
+        schema = yaml.safe_load(fh)
+    classes: dict[int, str] = schema["classes"]
+    groups: dict[str, list[int]] = schema.get("groups", {})
+
+    # Later assignments must not override higher-precedence ones, so walk the
+    # precedence order backwards and let the important groups write last.
+    ordered = [g for g in groups if g not in _GROUP_PRECEDENCE]
+    ordered += [g for g in reversed(_GROUP_PRECEDENCE) if g in groups]
+    out: dict[str, str] = {name: "other" for name in classes.values()}
+    for group in ordered:
+        for cid in groups[group]:
+            if cid in classes:
+                out[classes[cid]] = group
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Stub inference — synthetic detections in the exact real format.
 # ---------------------------------------------------------------------------
@@ -173,25 +207,215 @@ def predict(
     if stub:
         return _stub_predict(source, conf=conf, conf_military=conf_military)
 
-    # ---- Real inference path (NOT YET IMPLEMENTED) --------------------------
-    # TODO(P2/P3): implement Ultralytics-backed inference.
-    #   1. from ultralytics import YOLO
-    #   2. model = YOLO(weights)  # default to models/best.pt if None
-    #   3. results = model.predict(source, conf=min(conf, conf_military),
-    #                              imgsz=640, verbose=False)
-    #      -> run at the LOWER of the two thresholds so nothing is dropped early,
-    #         then filter per-class below.
-    #   4. For each box: map model class id -> name via load_classes(); apply
-    #      the per-class threshold: keep if
-    #         (name in military and score >= conf_military) or
-    #         (name not in military and score >= conf).
-    #      This is what enforces the >90% military recall gate.
-    #   5. Convert xyxy to absolute pixels, capture frame/timestamp for video,
-    #      and wrap each in a Detection.
-    raise NotImplementedError(
-        "Real inference is not implemented yet. Use stub=True (or --stub) until "
-        "a model exists. See the TODO in predict() for the Ultralytics approach."
+    model = load_model(weights)
+    military = _military_class_names()
+    is_video = Path(source).suffix.lower() in VIDEO_SUFFIXES
+
+    # Run at the LOWER of the two thresholds so nothing is dropped before the
+    # per-class filter below can apply the military gate.
+    results = model.predict(
+        source=source,
+        conf=min(conf, conf_military),
+        imgsz=640,
+        verbose=False,
+        stream=is_video,  # videos stream frame-by-frame instead of filling RAM
     )
+
+    dets: list[Detection] = []
+    fps = _video_fps(source) if is_video else None
+    for idx, result in enumerate(results):
+        frame = idx if is_video else None
+        timestamp = round(idx / fps, 3) if (is_video and fps) else None
+        dets.extend(
+            _detections_from_result(
+                result, military, conf, conf_military, frame=frame, timestamp=timestamp
+            )
+        )
+    logger.info("predicted %d detection(s) for source=%r", len(dets), source)
+    return dets
+
+
+# ---------------------------------------------------------------------------
+# Video tracking — ADDITIVE. `predict()` and `Detection` stay frozen; this is a
+# separate entry point for consumers that need stable per-vessel IDs.
+# ---------------------------------------------------------------------------
+@dataclass
+class TrackedDetection:
+    """A `Detection` plus the tracker's persistent ID (None if unassigned)."""
+
+    detection: Detection
+    track_id: int | None = None
+
+
+@dataclass
+class TrackedFrame:
+    """One video frame: its index, timestamp, BGR pixels, and detections."""
+
+    index: int
+    timestamp: float | None
+    image: Any  # np.ndarray (BGR) — typed loosely to keep numpy a soft import
+    detections: list[TrackedDetection] = field(default_factory=list)
+
+
+def track_video(
+    source: str,
+    weights: str | None = None,
+    conf: float = 0.25,
+    conf_military: float = 0.10,
+    tracker: str = "botsort.yaml",
+    vid_stride: int = 1,
+) -> Iterator[TrackedFrame]:
+    """Yield tracked frames from a video, one at a time.
+
+    Uses the same per-class threshold rule as `predict()`, so the military
+    recall gate holds here too. Streams frames so long videos never load whole
+    into memory.
+
+    Args:
+        source: video path.
+        weights: model weights (.pt); defaults to `DEFAULT_WEIGHTS`.
+        conf: general confidence threshold.
+        conf_military: LOWER threshold for military classes (the recall gate).
+        tracker: Ultralytics tracker config — "botsort.yaml" or "bytetrack.yaml".
+        vid_stride: process every Nth frame (>1 trades detail for speed).
+    """
+    model = load_model(weights)
+    military = _military_class_names()
+    fps = _video_fps(source)
+
+    results = model.track(
+        source=source,
+        conf=min(conf, conf_military),
+        imgsz=640,
+        tracker=tracker,
+        persist=True,
+        stream=True,
+        verbose=False,
+        vid_stride=max(1, vid_stride),
+    )
+
+    for step, result in enumerate(results):
+        index = step * max(1, vid_stride)
+        timestamp = round(index / fps, 3) if fps else None
+        ids = _track_ids(result)
+        dets = _detections_from_result(
+            result, military, conf, conf_military, frame=index, timestamp=timestamp
+        )
+        # _detections_from_result keeps source box order, so ids line up by index.
+        kept = _kept_box_indices(result, military, conf, conf_military)
+        tracked = [
+            TrackedDetection(detection=d, track_id=ids[i] if i < len(ids) else None)
+            for d, i in zip(dets, kept)
+        ]
+        yield TrackedFrame(
+            index=index, timestamp=timestamp, image=result.orig_img, detections=tracked
+        )
+
+
+# ---------------------------------------------------------------------------
+# Real-inference helpers (Ultralytics imported lazily — `--stub` needs no torch)
+# ---------------------------------------------------------------------------
+_MODEL_CACHE: dict[str, Any] = {}
+
+
+def load_model(weights: str | Path | None = None) -> Any:
+    """Load (and memoise) an Ultralytics YOLO model.
+
+    Imports ultralytics lazily so the stub path keeps working with no torch
+    installed. Raises FileNotFoundError with an actionable message when the
+    weights are missing — callers surface that instead of a stack trace.
+    """
+    path = Path(weights) if weights else DEFAULT_WEIGHTS
+    key = str(path)
+    if key in _MODEL_CACHE:
+        return _MODEL_CACHE[key]
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Model weights not found at {path}. Train a model, or run with "
+            f"stub=True / --stub."
+        )
+    from ultralytics import YOLO  # lazy: heavy import
+
+    logger.info("loading weights from %s", path)
+    model = YOLO(str(path))
+    _MODEL_CACHE[key] = model
+    return model
+
+
+def _keep(name: str, score: float, conf: float, conf_military: float,
+          military: set[str]) -> bool:
+    """Per-class threshold rule — the military gate lives here."""
+    return score >= (conf_military if name in military else conf)
+
+
+def _kept_box_indices(result: Any, military: set[str], conf: float,
+                      conf_military: float) -> list[int]:
+    """Indices of `result.boxes` that survive the per-class threshold."""
+    boxes = getattr(result, "boxes", None)
+    if boxes is None or len(boxes) == 0:
+        return []
+    names = result.names
+    return [
+        i
+        for i, box in enumerate(boxes)
+        if _keep(names[int(box.cls[0])], float(box.conf[0]), conf, conf_military,
+                 military)
+    ]
+
+
+def _detections_from_result(
+    result: Any,
+    military: set[str],
+    conf: float,
+    conf_military: float,
+    frame: int | None = None,
+    timestamp: float | None = None,
+) -> list[Detection]:
+    """Convert one Ultralytics result into `Detection`s in absolute pixels."""
+    boxes = getattr(result, "boxes", None)
+    if boxes is None or len(boxes) == 0:
+        return []
+    names = result.names
+    dets: list[Detection] = []
+    for box in boxes:
+        name = names[int(box.cls[0])]
+        score = float(box.conf[0])
+        if not _keep(name, score, conf, conf_military, military):
+            continue
+        x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].tolist())
+        dets.append(
+            Detection(
+                class_name=name,
+                confidence=round(score, 4),
+                bbox=[x1, y1, x2, y2],
+                frame=frame,
+                timestamp=timestamp,
+            )
+        )
+    return dets
+
+
+def _track_ids(result: Any) -> list[int | None]:
+    """Tracker IDs for `result.boxes`, or Nones when the tracker assigned none."""
+    boxes = getattr(result, "boxes", None)
+    if boxes is None or len(boxes) == 0:
+        return []
+    if getattr(boxes, "id", None) is None:
+        return [None] * len(boxes)
+    return [int(v) for v in boxes.id.tolist()]
+
+
+def _video_fps(source: str) -> float | None:
+    """Frame rate of `source`, or None if it can't be read."""
+    try:
+        import cv2
+    except ImportError:  # pragma: no cover - only when cv2 isn't installed
+        return None
+    cap = cv2.VideoCapture(str(source))
+    fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 0.0
+    cap.release()
+    return fps if fps and fps > 0 else None
 
 
 def detections_to_json(dets: list[Detection], indent: int = 2) -> str:
