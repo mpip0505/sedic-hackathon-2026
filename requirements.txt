@@ -3,6 +3,7 @@
 ultralytics==8.3.40
 torch==2.5.1
 torchvision==0.20.1
+lapx==0.9.4          # linear-assignment solver required by BoT-SORT/ByteTrack
 
 # Imaging & arrays
 opencv-python-headless==4.10.0.84
