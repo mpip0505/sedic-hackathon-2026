@@ -296,38 +296,49 @@ ablation/comparison — see the decision log.
 
 ## 5. Next steps
 
-**P1 — Data (critical path).** _(Done: DATASETS.md reconciled; dedup de-chained +
-audited; Medical Ship → null; `surface_synth` copy-paste built; **real
-surface-military `military_surface` added → `surface_synth` set to zero**; baseline
-retrained on this build and the gate cleared on both domains.)_
-1. ✅ Real frontal/surface military imagery sourced (`military_surface`; test now has
-   371 real surface-military instances). Optional: more frontal warship sets / Custom
-   RMN for the bonus fine-grained track.
-2. Decide whether SeaShips near-adjacent frames need **scene/group-aware splitting**
-   (vs the current distance-threshold dedup) before final numbers go in the brief.
+Team expanded to **5 people on 2026-07-31**; handles below are the new ones. Full
+task packets, data handoff formats and acceptance criteria live in
+**`docs/TEAM_TASKS.md`** — this is the summary view.
 
-**P2 — Training.** _(Done: baseline trained end to end, gate measured and PASSING —
-overall 0.904, aerial 0.940, surface 0.954. See §1 and the decision log.)_
-1. Investigate the low `speedboat` recall (0.384) — not gate-relevant but worth
-   understanding before the brief.
-2. If time allows: a second training run after scene/group-aware splitting (P1 item
-   2) to check the gate holds under a stricter leakage definition.
+**LEAD — ML core.** _(Done: data pipeline built and run; dedup de-chained + audited;
+real surface-military added; baseline trained; gate PASSING on both domains — overall
+0.904, aerial 0.940, surface 0.954; real `predict()` + presentation GUI shipped.)_
+1. **Decide the scene/group-aware split question** (decision log, 2026-07-26) — flagged
+   as required before any numbers enter the technical brief, so it **blocks DELIV**.
+   Either implement + retrain, or record the decision to accept the current split.
+2. Investigate the low `speedboat` recall (0.384) — not gate-relevant, but it is an
+   obvious jury question.
+3. Ingest the DATA-RMN / DATA-FOR handoffs: `schema.yaml` mapping + domain entries,
+   convert → merge → dedup → validate, `data/DATASETS.md` rows.
+4. Build `src/fine_grained/` (crop `military_vessel` detections → classify
+   `malaysian_rmn` vs `foreign`); flip `fine_grained.enabled` when it works.
+5. Run the detection log against the **Qualifier Clip** once provided — the export
+   format is already in place, only the clip is missing.
+6. Rehearse the Phase 2 live stress test, including the stub fallback path.
 
-**P3 — Integration + GUI.** _(Done: real `predict()` path implemented behind the
-frozen interface; `app/app.py` rebuilt as the presentation GUI with box drawing,
-live thresholds, BoT-SORT video tracking and the CSV detection log.)_
-1. Run the detection log against the **Qualifier Clip** once it's provided — the
-   export format is already in place, only the clip is missing.
-2. Rehearse the Phase 2 live stress test: judge-supplied images/video through the
-   GUI, including the stub fallback if weights or the model ever fail to load.
+**GUI — landing page.** _(New lane; unblocked today.)_
+1. Add `app/pages/` navigation with a mission/results **landing page** as the entry
+   point; move the existing detection view into a page unchanged.
+2. Constraints are non-negotiable and already cost this project two segfaults: no
+   `st.dataframe`, no hot reload (watcher disabled), **no hardcoded metrics or class
+   names** — read them from `outputs/eval/test_eval.md` and `schema.yaml`.
 
-**P4 — Deliverables + bonus.**
-1. Start the Custom RMN image collection (feeds both the surface-military gap and the
-   bonus).
-2. Draft the technical brief (dataset provenance, the 50→8 logic, military-recall
-   approach) — most of §2–§3 here is reusable.
-3. Bonus (only once the mandatory gate passes): OBB, then the RMN-vs-foreign 2nd
-   stage in `src/fine_grained/`.
+**DATA-RMN / DATA-FOR — the bonus set.** _(The only real critical path left.)_
+1. DATA-RMN: ≥6 RMN (TLDM) classes, ~150–300 images each, both domains, delivered as
+   labelled crops + `manifest.csv` with per-image source URL and licence.
+2. DATA-FOR: a `foreign` bucket at rough parity, ≥5 navies, deliberately including the
+   visually-similar regional ones (RSN, TNI-AL) as hard negatives. **Not** sourced from
+   ShipRSImageNet/`military_ships` — those are already in the detector's train split.
+3. DATA-FOR (secondary): surface imagery for `speedboat` / `tanker` / `yacht`, all of
+   which have **0 surface instances** today.
+
+**DELIV — submission package.**
+1. Draft the technical brief now for everything that isn't a number (dataset
+   provenance, the 50→8 logic, the dual-threshold military-classification logic) —
+   most of §2–§3 here is directly reusable. **Results table waits on LEAD item 1.**
+2. Record the ≤5 min video off the real GUI, showing both an aerial and a frontal
+   image (multi-angle is the headline requirement).
+3. Phase 2 only: poster, jury pitch (prepare a **scalability** answer), final package.
 
 ---
 
@@ -359,6 +370,7 @@ live thresholds, BoT-SORT video tracking and the CSV detection log.)_
 | 2026-07-28 | **`src/eval/detail.py` (conf sweep + per-domain aerial/surface recall) INCOMPLETE — deferred** | Repeated non-deterministic crashes on this run: GPU path hit a `cudnn`/`model.predict()` OOM (requested ~33GB on a 12GB card, same size every time regardless of batch/content); CPU path hit intermittent native access-violation crashes. Bisected a "failing" image range down to individual images that then passed clean on isolated retry and even on a straight retest of the original failing range — points to something environmental (a remote-session/display-context change on the machine mid-run is the leading theory) rather than a corrupt image or code bug. Two incidentally-oversized source images in `military_surface` (native res up to 6000×4000, unlike the rest of the dataset which is Roboflow-preprocessed to ≤2048px) were downsized in `data/processed` as a precaution but did not fix the crash, confirming they weren't the cause. The canonical gate (line above, via `metrics.py`) is unaffected — separate code path, completed cleanly. **TODO**: rerun `detail.py` (chunked via `--start`/`--end`/`--dump` + `--from-dumps` if still flaky) to get surface-only and aerial-only military recall specifically — the whole point of adding `military_surface`. Consider a defensive resize step in the data pipeline for any future oversized source images, since the frozen `predict()` interface could hit the same class of issue on a huge user-submitted photo. Owner: P1/P3 |
 | 2026-07-30 | **`src/eval/detail.py` root cause found + fixed; per-domain gate CLEARS on both domains (aerial 0.940, surface 0.954, overall 0.942)** | Root cause of the 2026-07-28 GPU OOM: `model.predict(stream=True, ...)` lets every single-image batch pick its own letterboxed shape (`auto=True` in Ultralytics' `pre_transform` whenever a batch's images share one shape, which single-image batches always do), and a long stream of differently-shaped images fragments/accumulates GPU memory until a normal-sized allocation fails — not a corrupt image (bisection showed identical slices OOM at *different* points depending only on how many images had already streamed in that process; the earlier "remote-session" theory doesn't hold, since it reproduced deterministically today back at the machine). Fixed by chunking collection into fresh-process slices via `--start`/`--end`/`--dump` (each fresh process resets the accumulation) then combining with `--from-dumps` — now the standard way to run this script on GPU; documented in the README. Also fixed a separate, unrelated bug: the final `print()` crashed with `UnicodeEncodeError` on Windows' cp1252 console default when printing the ✅/❌ markdown tables (after the report file was already written) — `sys.stdout.reconfigure(encoding="utf-8")` added. Results (test split, IoU 0.50): `conf_military` sweep clears the gate 0.05–0.30; per-domain military recall aerial 0.940, surface 0.954 (surface — the whole reason `military_surface` was added — actually scores *higher*), overall 0.942, all ✅ PASS. Full tables in `outputs/eval/test_eval.md` and the README `## Results` section. Owner: P1/P3 |
 | 2026-07-30 | **Real `predict()` path implemented + presentation GUI built** | `predict()`'s `NotImplementedError` branch replaced with the Ultralytics path: run at the **lower** of the two thresholds, then filter per class (military at `conf_military`, rest at `conf`) — that filter is what enforces the gate. Ultralytics/torch stay **lazy imports** so `--stub` still runs with no torch. The frozen `Detection`/`predict()` shapes are untouched; tracking is **additive** (`track_video()` → `TrackedFrame`/`TrackedDetection` with BoT-SORT IDs) rather than bent into the frozen contract, and `class_groups()` reads the GUI's colour grouping from `schema.yaml` so no class name is hardcoded in `app/`. GUI: colour-coded boxes (military red / small craft amber / civilian teal), military alert banner, per-group counts, metrics strip, before/after toggle, live threshold sliders (images re-run on slider move, cached per threshold), video playback with tracked IDs and a CSV detection log. Verified end to end in-browser on real weights. Owner: P3 |
+| 2026-07-31 | **Team expanded to 5; remaining work re-cut into 4 parallel lanes** (`docs/TEAM_TASKS.md`) | The serial core (data → model → gate) is finished, so the old 3-person, critical-path-first split no longer describes reality. New handles: **LEAD** (ML core + `src/fine_grained/`), **GUI** (landing page), **DATA-RMN** + **DATA-FOR** (the two halves of the bonus fine-grained set, one person each), **DELIV** (brief/video/poster). Two people on the bonus data rather than one because a binary MY-vs-Foreign classifier needs *both* halves at comparable scale, and the foreign half is the larger, messier collection job — plus the regionally-similar navies (RSN, TNI-AL) are the hard negatives that decide whether the classifier learns "Malaysian vs not" or just "grey ship vs US carrier". Data handoff is contract-first (fixed folder layout + `manifest.csv` with per-image source URL and licence) for the same reason `schema.yaml` and `predict()` are: four people collecting into one pipeline drift without a fixed shape. Sequencing: LEAD's scene-split decision goes first because it gates the numbers DELIV puts in the brief; the bonus data is the only remaining critical path, and also still the first thing to cut. Owner: LEAD |
 | 2026-07-30 | **GUI avoids `st.dataframe`; Streamlit file watcher disabled** | Two separate **SIGSEGV**s killed the whole server during GUI work — no Python traceback, browser just shows "Cannot load Streamlit frontend code". (1) Streamlit's source watcher walks `torch.classes` and crashes → `fileWatcherType = "none"` in `.streamlit/config.toml` (cost: manual restart after edits, which also prevents an accidental mid-demo rerun). (2) `st.dataframe` serializes via pyarrow, which segfaulted in `pandas_compat.convert_column` on pyarrow 25 + numpy 1.26 → results tables are hand-built HTML in `render_table()`. Diagnosed with `PYTHONFAULTHANDLER=1`, which is how you get a traceback out of a native crash. Both worked around rather than version-pinned, because a Phase 2 live stress test on someone else's machine must not depend on an exact pyarrow build. `lapx` (BoT-SORT's assignment solver) added to `requirements.txt`. Owner: P3 |
 
 ---

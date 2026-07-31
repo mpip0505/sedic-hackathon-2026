@@ -25,7 +25,8 @@ Three reference docs live in `docs/`. Read them before making decisions:
 |------|-----------|
 | `docs/SEDIC2026-track2.pdf` | **The official competition brief — the AUTHORITY on requirements and deliverables.** |
 | `docs/DATA_SOURCING_MAP.md` | Which datasets we use, their sources/licences, and the merge workflow. |
-| `docs/PROJECT_PLAYBOOK.md` | Repo structure, 4-person division of labour, step-by-step approach, sequencing. |
+| `docs/PROJECT_PLAYBOOK.md` | Repo structure, step-by-step approach, sequencing. (Its §3/§5 division of labour is superseded — see below.) |
+| `docs/TEAM_TASKS.md` | **The live 5-person work split**: per-person task packets, the fine-grained data handoff contract, acceptance criteria, dependency map. |
 
 **`docs/SEDIC2026-track2.pdf` is the source of truth.** If anything in this repo
 — code, config, this file, the README, or either of the other two docs —

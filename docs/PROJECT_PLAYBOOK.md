@@ -102,7 +102,25 @@ project-guardian/
 
 ---
 
-## 3. Division of labour (3-person team)
+## 3. Division of labour
+
+> **⚠️ Superseded 2026-07-31.** The team is now **5 people**, and the mandatory
+> gate is already **passed** (military recall 0.904 overall / aerial 0.940 /
+> surface 0.954). The live allocation of the *remaining* work — with per-person
+> task packets, data handoff formats and acceptance criteria — is
+> **[`docs/TEAM_TASKS.md`](TEAM_TASKS.md)**. Read that, not this section.
+>
+> | Handle | Owns |
+> |---|---|
+> | **LEAD** *(you)* | ML core — data merge, training, eval/gate, `predict()`, `src/fine_grained/` |
+> | **GUI** | `app/pages/` — landing page + navigation |
+> | **DATA-RMN** | The Malaysian (TLDM) half of the bonus fine-grained set |
+> | **DATA-FOR** | The Foreign-navy half + surface gap-fill (`speedboat`/`tanker`/`yacht`) |
+> | **DELIV** | `deliverables/` — technical brief PDF, ≤5 min video, Phase 2 poster |
+>
+> The rest of this section is the **original 3-person plan**, kept because the
+> *reasoning* (contract-first, stub-first, bonus-is-cuttable) still governs how
+> the team works.
 
 Everyone codes with AI help (Claude Code). Roles are drawn to match strengths and to keep the person on the critical path (you) from being overloaded — everything *downstream* of the model is pushed onto the other two.
 
@@ -122,8 +140,8 @@ Everyone codes with AI help (Claude Code). Roles are drawn to match strengths an
 - **Schema is frozen after Day 1.** Any change goes through P1 and gets announced — it invalidates converted data.
 - **Ship a rough model fast.** Everything downstream waits on your model, so get a *weak* baseline out in the first few days. Existence before quality — P2 needs something real to integrate against.
 - **One git repo, feature branches, PRs.** No "three notebooks that never merge."
-- **The bonus is the first thing to cut.** P3's fine-grained MY/Foreign work only proceeds if the mandatory pipeline is locked. Drop it without guilt if time is tight — it's bonus points, not a requirement.
-- **Deliverables are a whole-team push.** In the final ~3 days, all three pause new features to split the brief, video, and (if top 10) poster + pitch.
+- **The bonus is the first thing to cut.** The fine-grained MY/Foreign work only proceeds if the mandatory pipeline is locked. Drop it without guilt if time is tight — it's bonus points, not a requirement.
+- **Deliverables are a whole-team push.** In the final ~3 days, everyone pauses new features to split the brief, video, and (if top 10) poster + pitch.
 
 ---
 
@@ -198,6 +216,21 @@ Everyone codes with AI help (Claude Code). Roles are drawn to match strengths an
 ---
 
 ## 5. Suggested sequencing (3 people, ≈3-week sprint)
+
+> **⚠️ Historical.** As of 2026-07-31 the serial core below is **done** — Weeks 1
+> and 2 are complete and the gate passed on the first full run. The remaining
+> work runs in **four parallel lanes** with almost no cross-blocking:
+>
+> ```
+> LEAD  │ scene-split decision ──► ingest bonus data ──► src/fine_grained/ ──► qualifier clip
+> GUI   │ landing page ──► nav ──► polish  (independent; unblocked today)
+> DATA  │ RMN crops ──┐
+>       │ foreign  ──┴──► handoff to LEAD  ← the only real critical path left
+> DELIV │ brief prose ──► [wait on final numbers] ──► results ──► video ──► poster
+> ```
+>
+> The one hard dependency: **LEAD's scene-split decision gates the numbers DELIV
+> puts in the brief**, so it goes first. See [`TEAM_TASKS.md`](TEAM_TASKS.md).
 
 You (P1) hold the critical path (data → model → recall gate). The stub predictor + fixed API contract let P2 build the entire GUI/serving layer in parallel before your model exists, and P3 runs the bonus data collection independently — so all three are productive from Day 1 despite the serial core.
 

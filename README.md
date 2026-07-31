@@ -252,13 +252,20 @@ load the frontend. If you see that, check the terminal.
 
 # 🤝 Working in this repo
 
-## Ownership (team of 4)
-| Person | Owns | First task |
+## Ownership (team of 5, from 2026-07-31)
+The mandatory gate is passed and the core is built, so the remaining work is the
+**bonus**, the **presentation layer**, and the **submission package**.
+
+| Handle | Owns | Current task |
 |--------|------|-----------|
-| **P1** | Data pipeline — `src/data/`, `configs/schema.yaml`, `data/DATASETS.md` | ✅ 4 sets remapped+merged, real surface-military added → next: support P2's retrain |
-| **P2** | Model training — `src/train/`, augmentation, baseline | Training wrapper over Ultralytics |
-| **P3** | Integration + GUI — `src/inference/`, `app/`, `src/eval/` | ✅ real `predict()` + demo GUI done → next: Qualifier Clip log, Phase 2 rehearsal |
-| **P4** | Deliverables + bonus — brief/video/poster, `src/fine_grained/`, OBB | Start RMN image collection |
+| **LEAD** | ML core — `src/data/`, `src/train/`, `src/eval/`, `src/inference/`, `src/fine_grained/`, `configs/` | Scene-split decision → then the RMN-vs-Foreign 2nd stage |
+| **GUI** | `app/pages/`, `app/assets/` | Landing page + navigation over the existing detection view |
+| **DATA-RMN** | `data/raw/fine_grained/malaysian_rmn/` | Collect + annotate the RMN (TLDM) half of the bonus set |
+| **DATA-FOR** | `data/raw/fine_grained/foreign/`, gap-fill | Foreign-navy half, then surface `speedboat`/`tanker`/`yacht` |
+| **DELIV** | `deliverables/` | Technical brief PDF, ≤5 min video, Phase 2 poster |
+
+👉 **Full task packets, handoff formats and acceptance criteria:
+[`docs/TEAM_TASKS.md`](docs/TEAM_TASKS.md).** Read your section before starting.
 
 ## Branches & PRs
 ```bash
@@ -283,7 +290,7 @@ Merge to `main` via PR. Touching someone else's area? Tag them.
 5. **Every new dataset gets a row in `data/DATASETS.md`** with its licence.
 
 See `CLAUDE.md` for the full brief (auto-read by Claude Code) and `docs/` for the
-competition PDF, data sourcing map, and project playbook.
+competition PDF, data sourcing map, project playbook, and `TEAM_TASKS.md`.
 
 ---
 

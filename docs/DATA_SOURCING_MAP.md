@@ -93,7 +93,34 @@ US Navy (Arleigh Burke, Ticonderoga, carriers) · China PLAN (Type 052D, Type 05
 | Naval defence media (MalaysianDefence.com, Naval News, Janes) | Class references | Editorial copyright — reference, don't redistribute |
 | Google Earth over Lumut / Sepanggar / Kota Kinabalu naval bases | **Aerial** RMN views | Google Earth ToU |
 
-**Method:** aim ~150–300 images per RMN class, annotate in Roboflow, treat it as a fine-grained layer on top of the "Military" detection (either a 2-stage classifier on military crops, or extra classes in the main model).
+**Method:** aim ~150–300 images per RMN class, annotate in Roboflow, treat it as a fine-grained layer on top of the "Military" detection. **Decided:** a **2-stage classifier on `military_vessel` crops** (`src/fine_grained/`), *not* extra classes in the main detector — splitting `military_vessel` fragments positives and collapses the recall gate (`CLAUDE.md` non-negotiable #3).
+
+### Ownership + handoff (from 2026-07-31)
+
+Two people, one per half — **DATA-RMN** owns `malaysian_rmn/`, **DATA-FOR** owns `foreign/`. A binary classifier needs both halves at comparable scale.
+
+Deliver to LEAD in this exact shape (git-ignored; move it by shared drive / Roboflow link, never by git):
+
+```
+data/raw/fine_grained/
+  malaysian_rmn/<ship_class_slug>/*.jpg     # one vessel per crop, ≥96px short side
+  foreign/<navy>_<class_slug>/*.jpg
+  manifest.csv
+```
+
+`manifest.csv` header — a row missing `source_url` or `licence` is rejected:
+
+```csv
+filename,label,ship_class,navy,domain,source_url,licence,collected_by,date
+```
+
+`label` ∈ `{malaysian_rmn, foreign}` — fixed by `configs/schema.yaml` → `fine_grained.labels`; do not invent labels. `domain` ∈ `{surface, aerial}`.
+
+**Two traps:**
+- **Don't source foreign warships from ShipRSImageNet / `military_ships`** — they're already in the detector's train split, so reusing them leaks into the 2nd stage. Fresh imagery only.
+- **RSN / TNI-AL / RMN operate visually similar hulls in the same waters.** Those are the hard negatives worth collecting; a bucket full of US carriers is trivially separable and teaches the classifier nothing.
+
+Don't pre-split into train/val/test — LEAD's stratified splitter does that. Send an interim batch of 2 classes early so the format is validated before all 8 are collected. Full packet: `docs/TEAM_TASKS.md`.
 
 ---
 
