@@ -1,24 +1,27 @@
 # Contributing to Project Guardian
 
-Four people, all using Claude Code, working against shared contracts. Keep the
+Five people, all using Claude Code, working against shared contracts. Keep the
 contracts stable and the branches small.
 
 ## Ownership map
-| Person | Area | Primary paths |
+| Handle | Area | Primary paths |
 |--------|------|---------------|
-| **P1** | Data pipeline | `src/data/`, `src/data/converters/`, `data/DATASETS.md` |
-| **P2** | Model training | `src/train/`, `configs/train_baseline.yaml` |
-| **P3** | Integration + GUI | `src/inference/`, `app/`, `src/eval/` wiring |
-| **P4** | Deliverables + bonus | `deliverables/`, `src/fine_grained/`, OBB |
+| **LEAD** | ML core — data, training, eval, inference, bonus classifier | `src/data/`, `src/train/`, `src/eval/`, `src/inference/`, `src/fine_grained/`, `configs/` |
+| **GUI** | Landing page + navigation | `app/pages/`, `app/assets/` |
+| **DATA-RMN** | Malaysian (TLDM) half of the bonus set | `data/raw/fine_grained/malaysian_rmn/` |
+| **DATA-FOR** | Foreign-navy half + surface gap-fill | `data/raw/fine_grained/foreign/` |
+| **DELIV** | Submission package | `deliverables/` |
+
+Per-person task packets and the data handoff contract: **`docs/TEAM_TASKS.md`**.
 
 Changes to `configs/schema.yaml` or the `predict()`/`Detection` interface are
 **shared contracts** — get a second person's sign-off before merging.
 
 ## Branch naming
 ```
-<person>/<area>-<short-desc>
+<handle>/<area>-<short-desc>
 ```
-Examples: `p1/converters-seaships`, `p3/gui-box-drawing`, `p2/train-baseline`.
+Examples: `lead/finegrained-classifier`, `gui/landing-page`, `deliv/brief-draft`.
 
 ## Before every PR
 ```bash
