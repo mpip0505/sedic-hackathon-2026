@@ -36,7 +36,7 @@ section is context; everything below it is someone else's job.
 
 ---
 
-## LEAD — ML core (you)
+## LEAD — ML core (Afif)
 
 Unchanged ownership: data merge, training, eval, `predict()`, and now the
 2nd-stage classifier. Remaining:
@@ -66,7 +66,7 @@ Unchanged ownership: data merge, training, eval, `predict()`, and now the
 ## GUI — landing page
 
 **Goal:** the first screen a judge sees. Right now `app/app.py` drops straight
-into an uploader; there is no framing of what the system *is*. You are adding a
+into an uploader; there is no framing of what the system *is*. Add a
 landing page and the navigation between it and the existing detection view.
 
 ### What to build
