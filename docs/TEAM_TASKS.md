@@ -202,10 +202,14 @@ domains represented, and LEAD has confirmed one interim batch loads cleanly.
 
 ## DATA-FOR — the Foreign half + surface gap-fill
 
-Two jobs. The first is the counterpart to DATA-RMN and has the same contract;
-the second closes measured holes in the detector.
+Two jobs, run **in parallel**, not sequentially. Job 1 is the counterpart to
+DATA-RMN and has the same contract. Job 2 closes a measured, honest gap in
+the detector — it's cheap (find an existing export, not hand-annotation) and
+it defends a **mandatory** requirement (multi-angle detection), whereas Job
+1 feeds an **optional** bonus classifier. Don't queue Job 2 behind Job 1;
+work both, and hand over whichever lands first.
 
-### Job 1 — the `foreign` bucket (primary)
+### Job 1 — the `foreign` bucket
 
 A binary classifier needs both halves. Aim for **rough parity with DATA-RMN's
 total** (~1,000–1,500 images), spread across navies that are regionally
@@ -236,9 +240,14 @@ which are trivially separable and teach the classifier nothing.
 are already in the detector's train split — reusing them leaks into the
 2nd stage. Fresh imagery only.
 
-### Job 2 — surface civilian gap-fill (secondary)
+### Job 2 — surface civilian gap-fill (parallel priority, defends a mandatory requirement)
 
-`docs/PROGRESS.md` §4 records real holes in the current build:
+`docs/PROGRESS.md` §4 records the real, honest state: the "multi-angle
+detection" requirement only fully holds for **5 of 8** classes. `cargo`,
+`container_ship`, `fishing_boat`, `military_vessel`, and `passenger_ferry`
+all have real aerial + surface coverage (military — the gate class — passes
+both domains independently, aerial 0.940 / surface 0.954). These three do
+not:
 
 | Gap | Current state |
 |---|---|
@@ -246,20 +255,25 @@ are already in the detector's train split — reusing them leaks into the
 | `tanker` | **0 surface** instances |
 | `yacht` | thinnest class overall (390); **0 surface** instances |
 
-Find surface/frontal imagery for these three. Roboflow Universe and the
-Singapore Maritime Dataset (already mapped in `schema.yaml`) are the first
-places to look — an existing YOLO export you can hand over whole beats
-hand-annotation every time. Give LEAD the Roboflow URL, version, licence and
-class list; LEAD does the remap.
+None of these three is a gate class, so the mandatory military recall
+requirement is unaffected. But the broader multi-angle claim currently only
+covers 5/8 classes, and this is the cheapest possible fix: find surface/
+frontal imagery for these three. Roboflow Universe and the Singapore Maritime
+Dataset (already mapped in `schema.yaml`) are the first places to look — an
+existing YOLO export you can hand over whole beats hand-annotation every
+time. Give LEAD the Roboflow URL, version, licence and class list; LEAD does
+the remap.
 
-This is genuinely secondary — the gate is already passed and these classes are
-not gate classes. Do it only when Job 1 is done or blocked.
+**Run this in parallel with Job 1, not after it.** It's cheap and it defends
+a mandatory requirement; Job 1 feeds an optional bonus. If you only have time
+for one before a deadline, this is the one to protect.
 
 ### Done when
 
 `foreign/` matches `malaysian_rmn/` in scale with ≥5 navies and deliberate
-RSN/TNI-AL coverage, manifest validates, and any gap-fill sets are handed over
-as source links with licences.
+RSN/TNI-AL coverage, manifest validates, **and** the surface gap-fill sets for
+`speedboat`/`tanker`/`yacht` are handed to LEAD as source links with licences
+— both are required outcomes of this role, not one-then-maybe-the-other.
 
 ---
 
@@ -350,15 +364,22 @@ Brief PDF is in `deliverables/technical_brief/`, video is uploaded and under
 LEAD: scene-split decision ──────────────► final numbers ──► DELIV: brief results
 LEAD: (already done) gate + GUI ─────────► GUI: landing page ──► DELIV: video footage
 DATA-RMN: malaysian_rmn crops ──┐
-                                 ├──► LEAD: src/fine_grained/ ──► DELIV: bonus section
-DATA-FOR: foreign crops ────────┘
-DATA-FOR: surface gap-fill ──────────────► LEAD: optional retrain (only if time)
+                                 ├──► LEAD: src/fine_grained/ ──► DELIV: bonus section (optional)
+DATA-FOR: foreign crops ────────┘         [runs in PARALLEL with the line below,
+DATA-FOR: surface gap-fill (speedboat/    not after it — same person, two tracks]
+  tanker/yacht) ──────────────────────► LEAD: ingest + optional retrain
+                                           ──► defends the mandatory multi-angle
+                                               claim (currently 5/8 classes)
 ```
 
 **The critical path to a better score is the bonus set.** GUI and DELIV can both
-finish without it; the fine-grained classifier cannot. If DATA-RMN or DATA-FOR
-slips, that is the one to escalate.
+finish without it; the fine-grained classifier cannot. If DATA-RMN or DATA-FOR's
+foreign-bucket work slips, that is the one to escalate.
 
-**The bonus is also the first thing to cut.** If it can't land in time, drop it
-without guilt — the mandatory gate is already passed, and a polished submission
-with no bonus beats a broken one with a half-trained classifier.
+**The bonus is the first thing to cut — the surface gap-fill is not.** If the
+`foreign`/`malaysian_rmn` classifier can't land in time, drop it without guilt:
+the mandatory gate is already passed, and a polished submission with no bonus
+beats a broken one with a half-trained classifier. The surface gap-fill is a
+different kind of item — it's cheap, and it's the difference between an honest
+"multi-angle across all classes" claim and one that's only true for 5 of 8. Keep
+it in scope even if the bonus gets cut.

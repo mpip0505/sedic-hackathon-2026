@@ -1,6 +1,6 @@
 # Project Guardian — Progress Report
 
-_Last updated: 2026-07-30 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
+_Last updated: 2026-07-31 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
 
 This report reflects the **actual state of the repo** (code, configs, tests) as of
 the date above. The baseline has been trained and the military-recall gate has been
@@ -257,21 +257,37 @@ ablation/comparison — see the decision log.
 
 ## 4. Known gaps & risks
 
-- **🟢 Surface-military data — RESOLVED (was the highest-priority gap).** The
-  `military_surface` set adds **real** frontal warship imagery: `military_vessel` now
-  has surface coverage in all three splits (test: 371 real instances / 293 images).
-  The baseline has been retrained on this data and the gate measured on both domains
-  independently: aerial 0.940, surface 0.954 (surface actually scores *higher*). The
-  synthetic `surface_synth` copy-paste stopgap is set to zero for this build; the
-  code stays toggleable for ablation.
-- **🟡 `speedboat` recall is low (0.384 overall / 0.485 aerial-only in the per-domain
-  table)** — not part of the military gate, but flagged for follow-up. No surface
-  instances exist for this class, so it can't be cross-checked against a surface
-  number.
-- **🟡 Thin / zero classes on the surface side:** `tanker`, `yacht`, `speedboat` have
-  **0 surface** instances; `yacht` (390) is the thinnest overall. Surface civilian
-  coverage improved a lot after de-chaining (cargo 3,047, container 606, fishing 928
-  on surface).
+_Numbers in this section are sourced from the freshly-regenerated
+`outputs/eval/test_eval.md` — read figures from there, not from memory, if
+they need to go in a slide or the brief._
+
+- **🟢 Surface-military data — RESOLVED for the gate class (was the
+  highest-priority gap).** The `military_surface` set adds **real** frontal
+  warship imagery: `military_vessel` now has surface coverage in all three
+  splits (test: 371 real instances / 293 images). The baseline has been
+  retrained on this data and the gate measured on both domains independently:
+  aerial 0.940, surface 0.954 (surface actually scores *higher*). The
+  synthetic `surface_synth` copy-paste stopgap is set to zero for this build;
+  the code stays toggleable for ablation. **This resolves the mandatory
+  requirement (military recall, multi-angle) — it does not mean every class
+  in the taxonomy has both-domain coverage; see the next bullet.**
+- **🟡 Multi-angle coverage is honest for 5 of 8 classes, not all 8.** Per
+  `outputs/eval/test_eval.md`'s per-domain table, `cargo`, `container_ship`,
+  `fishing_boat`, `military_vessel`, and `passenger_ferry` all have both
+  aerial and surface instances (and recall measured on both). `speedboat`,
+  `tanker`, and `yacht` have **zero surface instances** — they exist in the
+  detector's test set only via aerial imagery, so their "multi-angle" claim
+  does not hold. This does not touch the mandatory gate (military is one of
+  the 5 covered classes), but a submission that implied every class was
+  multi-angle would be overstating the data. **This is DATA-FOR's gap-fill
+  job** (`docs/TEAM_TASKS.md`) — it's cheap to close (find an existing
+  surface/frontal export for these three classes, not hand-annotation), and
+  it now runs **in parallel** with the foreign-navy collection rather than
+  after it, because it defends a mandatory requirement (multi-angle) while
+  the RMN/foreign bonus classifier is optional.
+- **🟡 `speedboat` recall is low (0.485 aerial, 0 surface instances)** — not part of
+  the military gate, but flagged for follow-up. **Root cause diagnosed without
+  retraining; see the dedicated subsection below.**
 - **🟡 Dedup threshold vs video frames.** Threshold lowered to 3 (greedy) fixed the
   chaining over-prune, but SeaShips is video-derived: adjacent frames at hamming 4–5
   are now treated as distinct and can land in different splits. Greedy guarantees no
@@ -291,6 +307,106 @@ ablation/comparison — see the decision log.
 - **🟡 GUI runs at `conf_military = 0.25`, not the gate's 0.10.** The demo default
   favours a clean picture (recall 0.921 / precision 0.888) over max recall (0.942 at
   0.10). It's a slider, but the number quoted in the brief must be the 0.10 one.
+
+### `speedboat` recall — root-cause diagnosis (2026-07-31, no retrain)
+
+Diagnosed on the existing `models/baseline_best.pt`, TEST split, **no retraining
+run** — this is analysis for the jury pitch and to decide whether fixing it is
+worth the time before submission. Not gate-relevant (the >90% requirement
+applies only to `military_vessel`, which passes at 0.942 overall).
+
+**Confirmed recall / precision / instance count, by domain** (project
+methodology — `src/eval/detail.py`, conf 0.25, IoU 0.50, same numbers as
+`outputs/eval/test_eval.md`):
+
+| | aerial | surface |
+|---|---:|---:|
+| instances (test) | 268 | 0 |
+| recall | 0.485 | — |
+| precision | 0.489 | — |
+
+_(Ultralytics' own `model.val()` reports recall 0.384 for this class — lower
+than 0.485 because it's measured at Ultralytics' internally-chosen max-F1
+confidence point, not at the project's actual `conf=0.25` operating
+threshold. 0.485/0.489 is the pair that reflects what the deployed system
+actually does; both figures are cited around the repo, so don't mix them.)_
+
+**Confusion matrix — where the 138/268 non-recalled instances go.** Every
+speedboat GT box not matched at the operating threshold was checked against
+*all* predictions on its image (any class, any confidence down to the 0.01
+floor) to tell apart "never seen," "seen but under-confident," and "seen and
+called something else":
+
+| Outcome | Count | Share |
+|---|---:|---:|
+| Correctly detected (TP) | 130 | 48.5% |
+| Missed entirely — no prediction of any class overlaps it, at any confidence | 62 | 23.1% |
+| Right class, but confidence fell below the 0.25 operating threshold | 37 | 13.8% |
+| Mislabeled as another class at ≥0.25 confidence | 39 | 14.6% |
+
+Of the 39 mislabeled instances, **27 (69%) were called `yacht`**; the rest
+split thinly across `fishing_boat` (5), `military_vessel` (4),
+`passenger_ferry` (1), `cargo` (1), `container_ship` (1). Ultralytics' own
+confusion matrix (independently computed via `model.val(plots=True)`, IoU
+0.45) corroborates the same asymmetric pattern: 33 true-speedboat detections
+called `yacht` vs. only 6 true-yacht detections called `speedboat` — the
+model's bias runs one way, toward the larger, more common class.
+
+**Assessment of likely causes:**
+
+1. **Object size, not confusion, is the dominant driver.** Median GT box
+   size (short side, px) on the TEST split:
+
+   | Class | median short side (px) |
+   |---|---:|
+   | speedboat | **13.9** |
+   | yacht | 28.6 |
+   | fishing_boat | 58.5 |
+   | passenger_ferry | 96.0 |
+   | container_ship | 108.2 |
+   | military_vessel | 133.5 |
+   | cargo | 141.0 |
+   | tanker | 164.0 |
+
+   Speedboat is by far the smallest object class in the taxonomy — half the
+   median size of the next-smallest class (`yacht`) and 4–12× smaller than
+   everything else; a quarter of speedboat boxes are ≤9.5px on the short
+   side. That little pixel signal plausibly explains both the 23%
+   "missed entirely" and the 14% "right class, not confident enough" —
+   symptoms of weak features, not misclassification.
+2. **Small fast craft are hard to detect from directly overhead**, consistent
+   with (1): speedboat is aerial-only, so it is only ever evaluated in the
+   domain where its apparent size is smallest.
+3. **Genuine confusion, when it happens, is concentrated on `yacht`** — the
+   next-smallest, visually closest class (both are small planing-hull small
+   craft; `schema.yaml` groups them together under `small_craft`). At
+   ~14–29px the two are hard to distinguish even for a person.
+4. **Zero surface instances (see the gap above) means cause (2) can't be
+   cross-checked against a surface baseline** — there is no same-class,
+   different-domain comparison point today.
+
+**Plain-English explanation for the jury pitch (DELIV, use verbatim or adapt):**
+
+> Speedboat has the lowest recall in the system — about 49% at our operating
+> threshold — because speedboats are, on average, the smallest object in our
+> entire taxonomy in the aerial imagery: a typical speedboat covers roughly a
+> 14×14-pixel patch, about half the size of the next-smallest class and a
+> tenth the size of a cargo ship. At that scale the model either doesn't see
+> it at all (23% of the misses) or sees it but isn't confident enough to call
+> it (14%), and when it does confuse it with something else, it's almost
+> always with `yacht` — the visually closest small-craft class. It is not a
+> gate-relevant class — the mandatory >90% recall requirement applies only to
+> military vessels, which pass at 94% overall — but it's the clearest
+> remaining weak spot in the system, and it's a resolution problem, not a
+> labeling or data-quality problem.
+
+**Recommendation:** a surface-domain speedboat dataset (the DATA-FOR gap-fill
+job above) would close the multi-angle-coverage gap and is worth doing for
+that reason alone, but it would **not** be expected to meaningfully fix the
+low aerial recall — the root cause is object scale, not domain coverage, so
+a real fix would be resolution-side (larger `imgsz` / tiled inference for
+small aerial craft), not a data-collection one; not worth pursuing before
+submission given speedboat isn't a gate class.
 
 ---
 
@@ -329,8 +445,11 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
 2. DATA-FOR: a `foreign` bucket at rough parity, ≥5 navies, deliberately including the
    visually-similar regional ones (RSN, TNI-AL) as hard negatives. **Not** sourced from
    ShipRSImageNet/`military_ships` — those are already in the detector's train split.
-3. DATA-FOR (secondary): surface imagery for `speedboat` / `tanker` / `yacht`, all of
-   which have **0 surface instances** today.
+3. DATA-FOR, running **in parallel** with item 2 (not after it): surface imagery for
+   `speedboat` / `tanker` / `yacht`, all of which have **0 surface instances** today —
+   see §4. Cheap to close (an existing export, not hand-annotation) and defends the
+   mandatory multi-angle requirement, so it's no longer deprioritized behind the
+   optional bonus classifier.
 
 **DELIV — submission package.**
 1. Draft the technical brief now for everything that isn't a number (dataset
@@ -372,6 +491,7 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
 | 2026-07-30 | **Real `predict()` path implemented + presentation GUI built** | `predict()`'s `NotImplementedError` branch replaced with the Ultralytics path: run at the **lower** of the two thresholds, then filter per class (military at `conf_military`, rest at `conf`) — that filter is what enforces the gate. Ultralytics/torch stay **lazy imports** so `--stub` still runs with no torch. The frozen `Detection`/`predict()` shapes are untouched; tracking is **additive** (`track_video()` → `TrackedFrame`/`TrackedDetection` with BoT-SORT IDs) rather than bent into the frozen contract, and `class_groups()` reads the GUI's colour grouping from `schema.yaml` so no class name is hardcoded in `app/`. GUI: colour-coded boxes (military red / small craft amber / civilian teal), military alert banner, per-group counts, metrics strip, before/after toggle, live threshold sliders (images re-run on slider move, cached per threshold), video playback with tracked IDs and a CSV detection log. Verified end to end in-browser on real weights. Owner: P3 |
 | 2026-07-31 | **Team expanded to 5; remaining work re-cut into 4 parallel lanes** (`docs/TEAM_TASKS.md`) | The serial core (data → model → gate) is finished, so the old 3-person, critical-path-first split no longer describes reality. New handles: **LEAD** (ML core + `src/fine_grained/`), **GUI** (landing page), **DATA-RMN** + **DATA-FOR** (the two halves of the bonus fine-grained set, one person each), **DELIV** (brief/video/poster). Two people on the bonus data rather than one because a binary MY-vs-Foreign classifier needs *both* halves at comparable scale, and the foreign half is the larger, messier collection job — plus the regionally-similar navies (RSN, TNI-AL) are the hard negatives that decide whether the classifier learns "Malaysian vs not" or just "grey ship vs US carrier". Data handoff is contract-first (fixed folder layout + `manifest.csv` with per-image source URL and licence) for the same reason `schema.yaml` and `predict()` are: four people collecting into one pipeline drift without a fixed shape. Sequencing: LEAD's scene-split decision goes first because it gates the numbers DELIV puts in the brief; the bonus data is the only remaining critical path, and also still the first thing to cut. Owner: LEAD |
 | 2026-07-30 | **GUI avoids `st.dataframe`; Streamlit file watcher disabled** | Two separate **SIGSEGV**s killed the whole server during GUI work — no Python traceback, browser just shows "Cannot load Streamlit frontend code". (1) Streamlit's source watcher walks `torch.classes` and crashes → `fileWatcherType = "none"` in `.streamlit/config.toml` (cost: manual restart after edits, which also prevents an accidental mid-demo rerun). (2) `st.dataframe` serializes via pyarrow, which segfaulted in `pandas_compat.convert_column` on pyarrow 25 + numpy 1.26 → results tables are hand-built HTML in `render_table()`. Diagnosed with `PYTHONFAULTHANDLER=1`, which is how you get a traceback out of a native crash. Both worked around rather than version-pinned, because a Phase 2 live stress test on someone else's machine must not depend on an exact pyarrow build. `lapx` (BoT-SORT's assignment solver) added to `requirements.txt`. Owner: P3 |
+| 2026-07-31 | **`speedboat` low recall root-caused without retraining — object size, not confusion or domain** | Diagnosed on the existing `models/baseline_best.pt` (no retrain) for the jury pitch: at the project's op. point (conf 0.25, IoU 0.50) recall is 0.485 / precision 0.489, all 268 test instances aerial (0 surface). Per-GT-box outcome breakdown: 48.5% correctly detected, 23.1% missed entirely (no prediction of any class at any confidence), 13.8% right class but under the 0.25 threshold, 14.6% mislabeled (69% of those as `yacht`). Median GT box short side is 13.9px — smaller than every other class by 2–12×, including the next-smallest (`yacht`, 28.6px) — which plausibly explains the missed/under-confident buckets as a weak-signal problem, not a labeling problem; the confusion that does occur concentrates on `yacht` (the visually closest `small_craft`-group class), corroborated independently by Ultralytics' own confusion matrix (33 speedboat→yacht vs. 6 yacht→speedboat). **Recommendation: a surface speedboat dataset closes the multi-angle gap but would not be expected to fix the aerial recall** — the fix for that would be resolution-side (larger `imgsz`/tiling), not more data, and isn't worth pursuing pre-submission since speedboat isn't a gate class. Full breakdown in §4. Owner: LEAD |
 
 ---
 
