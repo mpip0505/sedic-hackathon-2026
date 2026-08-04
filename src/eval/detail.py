@@ -396,9 +396,99 @@ def _fmt(x: float | None) -> str:
     return "—" if x is None else f"{x:.3f}"
 
 
-def sweep_markdown(rows: list[SweepRow], gate: float) -> str:
-    out = ["### `military_vessel` conf threshold sweep (test split, IoU 0.50)", "",
-           "| conf | recall | precision | TP | FP | FN | gate >0.90 |",
+def _checkpoint_facts(weights: Path) -> list[str]:
+    """Training facts read out of the checkpoint itself (date, epochs, source).
+
+    Ultralytics stores `date` and `train_args` inside the .pt. Those describe the
+    run that produced the weights — unlike the file mtime, which only says when
+    the file landed on this machine. Returns [] if torch is unavailable (the
+    --from-dumps path must keep working without it) or the keys are absent.
+    """
+    try:
+        import torch
+        ckpt = torch.load(weights, map_location="cpu", weights_only=False)
+    except Exception as exc:  # noqa: BLE001 — provenance is best-effort, never fatal
+        logger.debug("could not read checkpoint metadata from %s: %s", weights, exc)
+        return []
+
+    facts: list[str] = []
+    trained = ckpt.get("date")
+    if trained:
+        facts.append(f"trained **{str(trained)[:19].replace('T', ' ')}**")
+    args = ckpt.get("train_args") or {}
+    if args.get("epochs"):
+        facts.append(f"{args['epochs']} epochs")
+    if args.get("model"):
+        facts.append(f"from `{args['model']}`")
+    if args.get("project"):
+        facts.append(f"run dir `{args['project']}`")
+    del ckpt
+    return [" · ".join(facts)] if facts else []
+
+
+def _provenance(weights: Path | None, split: str, n_images: int, iou: float,
+                device: str, conf: float, conf_military: float,
+                from_dumps: Path | None) -> str:
+    """Header block stating WHEN this ran, on WHICH weights, over WHICH split.
+
+    This file is the number the team quotes in the GUI, the brief and the
+    poster, so a report that doesn't date itself is worse than no report — a
+    stale one is indistinguishable from a current one. Emitted unconditionally.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    if weights is not None and Path(weights).is_file():
+        wp = Path(weights)
+        wdesc = f"`{wp.as_posix()}` ({wp.stat().st_size / 1e6:.1f} MB)"
+        # Prefer the checkpoint's OWN embedded training metadata over the file
+        # mtime: mtime records when the file was copied here, which is not when
+        # (or for how long) it was trained. Reading the wrong model's numbers as
+        # the current model's is the exact failure this header exists to stop.
+        for line in _checkpoint_facts(wp):
+            wdesc += f"<br>{line}"
+    else:
+        wdesc = f"`{weights}`" if weights else "_(unknown — rendered from dumps)_"
+
+    src = (f"cached prediction dumps in `{Path(from_dumps).as_posix()}`"
+           if from_dumps else f"a live inference pass (device `{device}`)")
+
+    banner = ("> **This file is auto-generated and is the single source of truth "
+              "for the numbers the team quotes.** Do not hand-edit. Regenerate "
+              "with the command at the bottom after any retrain, then update the "
+              "README.")
+    operating = (f"| **Operating point** | military @ conf {conf_military:.2f} · "
+                 f"all other classes @ conf {conf:.2f} |")
+    footnote = ("_Numbers here come from `detail.py`'s explicit VOC matching at "
+                "the actual operating threshold. `src/eval/metrics.py` "
+                "(Ultralytics' own val pass, max-F1 matching) is the **canonical "
+                "gate** and typically reads slightly lower. Quote `metrics.py` "
+                "for the headline gate number and these tables for the "
+                "per-domain/per-class breakdown._")
+
+    return "\n".join([
+        f"# Baseline evaluation — `{split}` split",
+        "",
+        banner,
+        "",
+        "| | |",
+        "|---|---|",
+        f"| **Generated** | {now} |",
+        f"| **Model** | {wdesc} |",
+        f"| **Split** | `{split}` — {n_images} images (held out; never trained on) |",
+        f"| **Predictions from** | {src} |",
+        f"| **Matching** | greedy PASCAL-VOC, IoU ≥ {iou:.2f} |",
+        operating,
+        "",
+        footnote,
+    ])
+
+
+def sweep_markdown(rows: list[SweepRow], gate: float, split: str = "test",
+                   iou: float = DEFAULT_IOU) -> str:
+    out = [f"### `military_vessel` conf threshold sweep ({split} split, IoU {iou:.2f})",
+           "",
+           f"| conf | recall | precision | TP | FP | FN | gate >{gate:.2f} |",
            "|-----:|-------:|----------:|---:|---:|---:|:----------:|"]
     for r in rows:
         out.append(f"| {r.conf:.2f} | {r.recall:.3f} | {r.precision:.3f} | "
@@ -406,13 +496,16 @@ def sweep_markdown(rows: list[SweepRow], gate: float) -> str:
     return "\n".join(out)
 
 
-def per_domain_markdown(res: DomainClassResult) -> str:
+def per_domain_markdown(res: DomainClassResult, split: str = "test",
+                        conf: float = 0.25, conf_military: float = 0.10,
+                        iou: float = DEFAULT_IOU) -> str:
     domains = sorted(res.per_domain_recall)
     classes = sorted({c for d in res.per_domain_recall.values() for c in d}
                      | set(res.overall_per_class_recall))
 
-    out = ["### Per-domain × per-class recall (test split)",
-           "_military @ conf 0.10, civilian classes @ conf 0.25, IoU 0.50_", ""]
+    subtitle = (f"_military @ conf {conf_military:.2f}, all other classes @ conf "
+                f"{conf:.2f}, IoU {iou:.2f}_")
+    out = [f"### Per-domain × per-class recall ({split} split)", subtitle, ""]
     header = "| class | " + " | ".join(domains) + " | overall |"
     sep = "|-------|" + "|".join(["------:"] * (len(domains) + 1)) + "|"
     out += [header, sep]
@@ -422,7 +515,7 @@ def per_domain_markdown(res: DomainClassResult) -> str:
         out.append(f"| {row_label} | " + " | ".join(cells) + f" | "
                    f"{_fmt(res.overall_per_class_recall.get(c))} |")
     out += ["", "### Military recall per domain (the gate, localised)", "",
-            "| domain | military recall | gate >0.90 |",
+            f"| domain | military recall | gate >{res.gate:.2f} |",
             "|--------|----------------:|:----------:|"]
     for d in domains:
         mr = res.military_recall_by_domain.get(d)
@@ -530,11 +623,20 @@ def main(argv: list[str] | None = None) -> int:
                             gate=args.gate)
     _log_per_domain(res)
 
-    wname = Path(args.weights).name if args.weights else "baseline_best.pt"
-    md = (f"# Baseline evaluation — {args.split} split\n\n"
-          f"`{wname}` · IoU {args.iou:.2f} · {len(samples)} images\n\n"
-          + sweep_markdown(rows, args.gate) + "\n\n"
-          + per_domain_markdown(res) + "\n")
+    regen = (f"python -m src.eval.detail --weights "
+             f"{Path(args.weights).as_posix() if args.weights else '<weights.pt>'} "
+             f"--split {args.split} --device {args.device} --batch {args.batch}")
+    md = (
+        _provenance(args.weights, args.split, len(samples), args.iou, args.device,
+                    args.conf, args.conf_military, args.from_dumps) + "\n\n"
+        + sweep_markdown(rows, args.gate, args.split, args.iou) + "\n\n"
+        + per_domain_markdown(res, args.split, args.conf, args.conf_military,
+                              args.iou) + "\n\n"
+        + "---\n\n### Regenerate\n\n```bash\n" + regen + "\n```\n\n"
+        "On a long CPU/GPU pass, collect in fresh-process chunks instead "
+        "(`--start`/`--end`/`--dump`), then render with `--from-dumps` — see the "
+        "README `## Results` note.\n"
+    )
     md_out = args.md_out or (schema_utils.REPO_ROOT / "outputs" / "eval"
                              / f"{args.split}_eval.md")
     md_out.parent.mkdir(parents=True, exist_ok=True)

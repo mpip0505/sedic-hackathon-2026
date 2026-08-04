@@ -475,10 +475,14 @@ def merge(
     write_split(items, processed_root)
     write_domains_json(items, processed_root)
 
+    # as_posix(), not str(): on Windows str() yields "data\processed", which is
+    # not a path on macOS/Linux — data.yaml is committed, so a Windows-generated
+    # one would break every other clone. Ultralytics accepts forward slashes on
+    # all platforms.
     try:
-        processed_str = str(processed_root.resolve().relative_to(schema_utils.REPO_ROOT))
+        processed_str = processed_root.resolve().relative_to(schema_utils.REPO_ROOT).as_posix()
     except ValueError:
-        processed_str = str(processed_root)
+        processed_str = Path(processed_root).as_posix()
     schema_utils.write_data_yaml(schema, data_yaml, processed_root=processed_str)
 
     log_distribution(items, schema)
