@@ -2,3 +2,10 @@
 # Make the repo root importable so tests can `import src.*` when run from anywhere.
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# app/app.py imports src.* only after inserting the repo root into sys.path, so its
+# two project imports are not at the top of the file. Recent ruff recognises that
+# idiom and stays silent, but the ruff==0.6.9 pinned in requirements.txt does not —
+# without this, `ruff check .` fails locally while CI (unpinned ruff) passes.
+"app/app.py" = ["E402"]

@@ -36,7 +36,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Imported after the sys.path setup above, deliberately.
+# Imported after the sys.path setup above, deliberately. E402 is ignored for this
+# file in pyproject.toml rather than with an inline suppression comment, because
+# current ruff already understands the sys.path idiom and would then flag that
+# comment itself as an unused directive (RUF100).
 from src.inference import predict as gp
 from src.inference.predict import Detection
 
@@ -1101,7 +1104,6 @@ def landing_page() -> None:
     with acknowledgement[5]:
         _show_logo(asset_dir / "stride-logo-removebg-preview.png", st, 108)
     st.markdown('<div class="entry-footer">Project Guardian · Maritime Domain Awareness Platform</div></div>', unsafe_allow_html=True)
-    return
 
 
 @st.dialog(" ", width="large")
