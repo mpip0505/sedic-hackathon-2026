@@ -28,6 +28,7 @@ The competition demands **multi-angle** detection. Frontal (camera-on-water) and
 | **ABOShips** | inshore + offshore | vessels + buoys + small craft | arXiv 2102.05869 / linked repo | Ferry-mounted cameras (Finnish archipelago). Precise annotations, good small-craft coverage. |
 | **SeaSAw (Sea Machines)** | 1.9M imgs / 14.6M objects | 12+ | Request from Sea Machines | Huge & diverse but access is gated/commercial. Aspirational, not day-one. |
 | **Roboflow Universe (surface)** | varies | varies | `universe.roboflow.com` search: `boat`, `ship`, `maritime` | Many are already **YOLO-export ready** — zero conversion. Quality varies, check annotations. |
+| **`civilian_gapfill`** — `boats-ri7td/speedboat` v2 | 6,213 imgs / 10,816 boxes | 18 exported names, but only 4 are vessels: `Fishing-boats`, `speedboat`, `Yacht`, `tugboat` (3,290 boxes). **No `tanker`.** | Roboflow, CC BY 4.0 — `python scripts/download_civilian_gapfill.py` | **Downloaded 2026-08-05, NOT ingested or trained in.** Close-view civilian surface imagery, acquired to cut civilian-as-`military_vessel` false positives. ~67% of boxes carry Roboflow README boilerplate as their label — those names must be mapped to `null` at ingest. Row + full class list in `data/DATASETS.md`. |
 
 ---
 

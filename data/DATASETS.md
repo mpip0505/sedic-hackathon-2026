@@ -19,7 +19,6 @@ current `data/processed/` build. Counts are real (raw folders / merge output).
 | `seaships` | surface | [`ship-detection-cedpa/seaships-spcag`](https://universe.roboflow.com/ship-detection-cedpa/seaships-spcag) | 1 | CC BY 4.0 | 6,979 | 6,979 / 9,198 | civilian + small craft (6→schema) |
 | `shiprsimagenet` | aerial | [`convertvoctoyolo/shiprsimagenet`](https://universe.roboflow.com/convertvoctoyolo/shiprsimagenet) | 39 | CC BY 4.0 (derives from academic ShipRSImageNet) | 4,579 | 4,535 / 34,299 | military + civilian (50→8 collapse) |
 | `military_surface` | **surface** | [`hannah-agkvq/military-ship-detection-qxv5m`](https://universe.roboflow.com/hannah-agkvq/military-ship-detection-qxv5m) | 2 | CC BY 4.0 | 3,011 | 3,000 / 3,713 | **military_vessel only** (single-class `ship`→military; first REAL surface-military source) |
-| `civilian_gapfill` | surface | [`boats-ri7td/speedboat`](https://universe.roboflow.com/boats-ri7td/speedboat) | 2 | CC BY 4.0 | 6,213 | *pending remap* | civilian + small craft (surface gapfill) |
 
 _"After remap" = output of `yolo2yolo` into `data/interim/` (images with zero
 kept boxes are dropped; polygon labels enveloped to horizontal boxes). Added by
@@ -58,6 +57,47 @@ data now exists — see below)._
 > ShipRSImageNet 50-class taxonomy, so both go through one collapse in
 > `configs/schema.yaml` (anchor `&shiprs50`). `military_ships` is NOT
 > all-military — it contains civilians too.
+
+## Acquired — downloaded, NOT yet integrated
+
+Fetched into `data/raw/` but **not** in `data/processed/`, **not** in
+`configs/schema.yaml` (`mappings:` / `domains:`), and **not** trained into
+`models/baseline_best.pt`. Every result and recall number in this repo is from a
+build that **excludes** this set.
+
+| Dataset (folder) | Domain | Roboflow source | Ver | Licence | Raw imgs | Fetch | Purpose |
+|---|---|---|---|---|---:|---|---|
+| `civilian_gapfill` | surface | [`boats-ri7td/speedboat`](https://universe.roboflow.com/boats-ri7td/speedboat) | 2 (generated 2025-02-20) | CC BY 4.0 (declared by the Roboflow project) | 6,213 | `python scripts/download_civilian_gapfill.py` | Close-view **civilian** surface imagery — intended to reduce civilian-vessels-detected-as-`military_vessel` false positives |
+
+**Real class list.** The Roboflow project is *named* "speedboat", but it is a merge
+of several upstream sets and the exported taxonomy is **18 class names, most of them
+junk**. Read from the Roboflow project API on 2026-08-05 (class name → annotation
+count; 10,816 boxes total):
+
+| Kind | Classes (annotation count) |
+|---|---|
+| **Vessel classes (usable)** | `Fishing-boats` 2,820 · `speedboat` 211 · `Yacht` 170 · `tugboat` 89 — **3,290 boxes (30%)** |
+| Non-vessel | `Human Fall` 245 |
+| **Junk** — Roboflow README/export boilerplate ingested as class names | `undefined` 1,619 · `ship_detection - v1 2025-01-02 1:34pm` 1,338 · `==============================` 776 · `fishing boat - v2 2022-01-27 11:32pm` 690 · `all - v2 2023-05-24 7:41pm` 544 · `Roboflow is an end-to-end computer vision platform that helps you` 466 · `* annotate, and create datasets` 431 · `* understand and search unstructured image data` 361 · `* export, train, and deploy computer vision models` 357 · `* collaborate with your team on computer vision projects` 321 · `* use active learning to improve your dataset over time` 276 · `This dataset was exported via roboflow.com on January 11, 2024 at 6:42 AM GMT` 70 · `* collect & organize images` 32 — **7,281 boxes (67%)** |
+
+**Ingest notes (LEAD, before this can be merged):**
+- The junk entries are **real boxes carrying unusable label text**, not empty
+  classes. Each must be mapped explicitly in `configs/schema.yaml` — most of them to
+  `null` (dropped) — or they poison the taxonomy. Do **not** use a `"*":` wildcard
+  here (see the 2026-07-25 decision on `military_ships`).
+- Likely mapping: `Fishing-boats` → `fishing_boat`, `speedboat` → `speedboat`,
+  `Yacht` → `yacht`, `Human Fall` → `null`. `tugboat` has no schema class — decide
+  `null` or fold into a civilian class; do not add a class to satisfy one source.
+- **No `tanker` class exists in this set**, so it does *not* close the `tanker`
+  surface gap. It does supply surface `speedboat` and `yacht` — two of the three
+  zero-surface classes.
+- Roboflow's own split (train 4,370 / valid 1,121 / test 722) is discarded as usual;
+  `merge.py` does its own stratified split.
+- `seaships` is also surface + civilian — expect dedup overlap; run the normal greedy
+  dedup and re-check `validate`'s leakage report.
+- After any retrain that includes this set, the **military recall gate must be
+  re-measured** (`src/eval/detail.py` → `outputs/eval/test_eval.md`) before any number
+  is quoted anywhere.
 
 ## Candidate / not yet integrated
 

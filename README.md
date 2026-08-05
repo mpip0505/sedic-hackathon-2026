@@ -96,6 +96,7 @@ python scripts/download_military_ships.py
 python scripts/download_seaships.py
 python scripts/download_shiprsimagenet.py
 python scripts/download_military_surface.py
+python scripts/download_civilian_gapfill.py   # acquired, not yet ingested — see below
 ```
 
 **Verify:**
@@ -104,6 +105,7 @@ find data/raw/military_ships -name "*.jpg" | wc -l     # ~2.7k
 find data/raw/seaships -name "*.jpg" | wc -l           # ~7k
 find data/raw/shiprsimagenet -name "*.jpg" | wc -l     # ~4.6k
 find data/raw/military_surface -name "*.jpg" | wc -l   # ~3.0k
+find data/raw/civilian_gapfill -name "*.jpg" | wc -l   # ~6.2k
 cat data/raw/seaships/data.yaml                        # check class name strings
 ```
 
@@ -114,7 +116,6 @@ cat data/raw/seaships/data.yaml                        # check class name string
 | `seaships` | surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 | CC BY 4.0 |
 | `shiprsimagenet` | aerial | ~4.6k | YOLO (Roboflow) | `convertvoctoyolo/shiprsimagenet` v39 | CC BY 4.0¹ |
 | `military_surface` | **surface** | ~3.0k | YOLO (Roboflow) | `hannah-agkvq/military-ship-detection-qxv5m` v2 | CC BY 4.0 |
-| `civilian_gapfill` | surface | ~6.2k | YOLO (Roboflow) | `boats-ri7td/speedboat` v2 | CC BY 4.0 |
 
 All arrive **already in YOLO format** with their own `train/valid/test` split —
 that split is **discarded**; `merge.py` does its own stratified split. The Roboflow
@@ -123,6 +124,21 @@ provenance and licences: `data/DATASETS.md`.
 
 _¹ the Roboflow re-export declares CC BY 4.0; the underlying ShipRSImageNet is
 academic-use-only — attribute both, don't claim commercial rights._
+
+### Acquired, not yet in use
+| Name | Domain | Images | Format | Source | Licence |
+|------|--------|-------:|--------|--------|--------|
+| `civilian_gapfill` | surface | 6,213 | YOLO (Roboflow) | `boats-ri7td/speedboat` v2 | CC BY 4.0 |
+
+Fetched with `python scripts/download_civilian_gapfill.py` into
+`data/raw/civilian_gapfill/`. Close-view **civilian** surface imagery, acquired to
+reduce civilian vessels being detected as `military_vessel`. It is **not** merged
+into `data/processed/`, not mapped in `configs/schema.yaml`, and **not** trained
+into `models/baseline_best.pt` — every number under `## Results` is from a build
+without it. Despite the project name, its real taxonomy is 18 classes of which only
+four are vessels (`Fishing-boats`, `speedboat`, `Yacht`, `tugboat`) and ~67% of
+boxes carry junk boilerplate labels; the full class list and the ingest caveats are
+in `data/DATASETS.md`.
 
 > **Surface-military gap — closed.** `military_surface` is the first **real**
 > frontal-view warship set, giving `military_vessel` surface coverage in all three

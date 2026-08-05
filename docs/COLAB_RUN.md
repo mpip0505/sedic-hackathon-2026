@@ -58,6 +58,13 @@ If `torch.cuda.is_available()` flips to `False` after this, restart the runtime
 Put your Roboflow key in a **Colab secret** (🔑 left sidebar → *Secrets* → add
 `ROBOFLOW_API_KEY`, toggle notebook access), then:
 
+> ⚠️ **The cells below reproduce the older three-dataset build.** The build behind
+> `models/baseline_best.pt` also includes `military_surface` (add
+> `scripts/download_military_surface.py` + its `yolo2yolo --dataset military_surface`)
+> and runs step 4d with `--no-cross-domain`, since real surface-military data made the
+> `surface_synth` stopgap unnecessary. `civilian_gapfill` (downloaded 2026-08-05) is
+> **not** in any build — it has no `schema.yaml` mapping yet. See `data/DATASETS.md`.
+
 ```python
 import os
 from google.colab import userdata

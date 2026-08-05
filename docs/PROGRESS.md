@@ -1,6 +1,6 @@
 # Project Guardian — Progress Report
 
-_Last updated: 2026-07-31 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
+_Last updated: 2026-08-05 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
 
 This report reflects the **actual state of the repo** (code, configs, tests) as of
 the date above. The baseline has been trained and the military-recall gate has been
@@ -32,7 +32,7 @@ Against the two core competition requirements:
 |---|---|---|
 | Phase 0 scaffold | ✅ Done | dirs, configs, CI, `.gitignore`, requirements |
 | Contracts (`schema.yaml`, `predict()`/`Detection`, `--stub`) | ✅ Done | stub runs with no torch/weights |
-| Data acquisition (3 datasets) | ✅ Done | Roboflow YOLO exports in `data/raw/` |
+| Data acquisition (4 datasets in the build) | ✅ Done | Roboflow YOLO exports in `data/raw/`. A 5th, `civilian_gapfill`, was downloaded 2026-08-05 but is **not ingested or trained in** — see §2.1 |
 | Converters (voc / dota / cls / **yolo2yolo**) | ✅ Done | all unit-tested |
 | Schema class mapping (50 → 8 collapse) | ✅ Done | anchored, shared by 2 datasets |
 | Merge → dedup → stratified split | ✅ Done | greedy de-chained dedup; `data/processed/` produced |
@@ -67,6 +67,29 @@ All four are **Roboflow YOLO exports** placed in `data/raw/<name>/` (git-ignored
 > *original* SeaShips and ShipRSImageNet datasets are academic-use-only. Do not
 > claim commercial rights; attribute all three. `data/DATASETS.md` has been
 > reconciled to these real datasets/counts/licences.
+
+#### Acquired 2026-08-05, NOT yet in the build — `civilian_gapfill`
+
+| Dataset (folder) | Domain | Source (Roboflow) | Ver | Licence (as declared) | Raw imgs |
+|---|---|---|---|---|---:|
+| `civilian_gapfill` | surface | `boats-ri7td/speedboat` | 2 | CC BY 4.0 | 6,213 |
+
+Downloaded by DATA-FOR via `scripts/download_civilian_gapfill.py`. Purpose:
+close-view **civilian** surface imagery to reduce civilian vessels being detected
+as `military_vessel`. **State: raw only.** It is not mapped in
+`configs/schema.yaml`, not merged into `data/processed/`, and **not trained into
+`models/baseline_best.pt`** — so no number in this report, in
+`outputs/eval/test_eval.md`, or in the README reflects it. Nothing changes until
+an ingest + retrain is run and re-verified.
+
+Its real taxonomy is **not** "speedboat": the Roboflow project is a merge of
+several upstream sets and exports **18 class names**, of which only four are
+vessels (`Fishing-boats` 2,820 · `speedboat` 211 · `Yacht` 170 · `tugboat` 89
+boxes), one is non-vessel (`Human Fall` 245), and thirteen are Roboflow README
+boilerplate ingested as class names — **~67% of all boxes** carry an unusable
+label. Full class list, licence and ingest caveats: `data/DATASETS.md`. It also
+has **no `tanker` class**, so it fills the surface gap for `speedboat` and `yacht`
+only, not for `tanker`.
 
 ### 2.2 The 50 → 8 class collapse (`configs/schema.yaml`)
 
@@ -284,7 +307,19 @@ they need to go in a slide or the brief._
   surface/frontal export for these three classes, not hand-annotation), and
   it now runs **in parallel** with the foreign-navy collection rather than
   after it, because it defends a mandatory requirement (multi-angle) while
-  the RMN/foreign bonus classifier is optional.
+  the RMN/foreign bonus classifier is optional. **Partially sourced as of
+  2026-08-05:** `civilian_gapfill` (see §2.1) supplies surface `speedboat` and
+  `yacht` but has **no `tanker` class**, and it is still raw — downloaded,
+  not ingested, not trained in. The gap stays open until a retrain including
+  it is verified.
+- **🟡 Civilian vessels detected as `military_vessel` (false positives).** The
+  dual-threshold rule runs military at `conf_military = 0.10`, deliberately
+  trading precision for the recall gate, so civilian craft do get called
+  military — reported from GUI demo runs, and an obvious jury question. The intended fix
+  is more close-view civilian surface data (`civilian_gapfill`, above), not a
+  threshold change: raising `conf_military` would attack the one mandatory
+  requirement. **Not yet fixed** — nothing has been retrained. When the retrain
+  happens, the military gate must be re-measured before any figure moves.
 - **🟡 `speedboat` recall is low (0.485 aerial, 0 surface instances)** — not part of
   the military gate, but flagged for follow-up. **Root cause diagnosed without
   retraining; see the dedicated subsection below.**
@@ -425,7 +460,10 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
 2. Investigate the low `speedboat` recall (0.384) — not gate-relevant, but it is an
    obvious jury question.
 3. Ingest the DATA-RMN / DATA-FOR handoffs: `schema.yaml` mapping + domain entries,
-   convert → merge → dedup → validate, `data/DATASETS.md` rows.
+   convert → merge → dedup → validate, `data/DATASETS.md` rows. **First one waiting:
+   `civilian_gapfill`** (downloaded 2026-08-05, raw only) — its 13 junk class names
+   must be mapped explicitly to `null`, no wildcard. Retrain after ingest, then
+   **re-measure the military gate before quoting any number.**
 4. Build `src/fine_grained/` (crop `military_vessel` detections → classify
    `malaysian_rmn` vs `foreign`); flip `fine_grained.enabled` when it works.
 5. Run the detection log against the **Qualifier Clip** once provided — the export
@@ -449,7 +487,10 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
    `speedboat` / `tanker` / `yacht`, all of which have **0 surface instances** today —
    see §4. Cheap to close (an existing export, not hand-annotation) and defends the
    mandatory multi-angle requirement, so it's no longer deprioritized behind the
-   optional bonus classifier.
+   optional bonus classifier. _(Progress 2026-08-05: `scripts/download_civilian_gapfill.py`
+   done — `boats-ri7td/speedboat` v2, CC BY 4.0, 6,213 surface imgs, covers `speedboat`
+   and `yacht` but **not** `tanker`. Handed to LEAD for ingest; still a `tanker` surface
+   source to find.)_
 
 **DELIV — submission package.**
 1. Draft the technical brief now for everything that isn't a number (dataset
@@ -492,6 +533,7 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
 | 2026-07-31 | **Team expanded to 5; remaining work re-cut into 4 parallel lanes** (`docs/TEAM_TASKS.md`) | The serial core (data → model → gate) is finished, so the old 3-person, critical-path-first split no longer describes reality. New handles: **LEAD** (ML core + `src/fine_grained/`), **GUI** (landing page), **DATA-RMN** + **DATA-FOR** (the two halves of the bonus fine-grained set, one person each), **DELIV** (brief/video/poster). Two people on the bonus data rather than one because a binary MY-vs-Foreign classifier needs *both* halves at comparable scale, and the foreign half is the larger, messier collection job — plus the regionally-similar navies (RSN, TNI-AL) are the hard negatives that decide whether the classifier learns "Malaysian vs not" or just "grey ship vs US carrier". Data handoff is contract-first (fixed folder layout + `manifest.csv` with per-image source URL and licence) for the same reason `schema.yaml` and `predict()` are: four people collecting into one pipeline drift without a fixed shape. Sequencing: LEAD's scene-split decision goes first because it gates the numbers DELIV puts in the brief; the bonus data is the only remaining critical path, and also still the first thing to cut. Owner: LEAD |
 | 2026-07-30 | **GUI avoids `st.dataframe`; Streamlit file watcher disabled** | Two separate **SIGSEGV**s killed the whole server during GUI work — no Python traceback, browser just shows "Cannot load Streamlit frontend code". (1) Streamlit's source watcher walks `torch.classes` and crashes → `fileWatcherType = "none"` in `.streamlit/config.toml` (cost: manual restart after edits, which also prevents an accidental mid-demo rerun). (2) `st.dataframe` serializes via pyarrow, which segfaulted in `pandas_compat.convert_column` on pyarrow 25 + numpy 1.26 → results tables are hand-built HTML in `render_table()`. Diagnosed with `PYTHONFAULTHANDLER=1`, which is how you get a traceback out of a native crash. Both worked around rather than version-pinned, because a Phase 2 live stress test on someone else's machine must not depend on an exact pyarrow build. `lapx` (BoT-SORT's assignment solver) added to `requirements.txt`. Owner: P3 |
 | 2026-07-31 | **`speedboat` low recall root-caused without retraining — object size, not confusion or domain** | Diagnosed on the existing `models/baseline_best.pt` (no retrain) for the jury pitch: at the project's op. point (conf 0.25, IoU 0.50) recall is 0.485 / precision 0.489, all 268 test instances aerial (0 surface). Per-GT-box outcome breakdown: 48.5% correctly detected, 23.1% missed entirely (no prediction of any class at any confidence), 13.8% right class but under the 0.25 threshold, 14.6% mislabeled (69% of those as `yacht`). Median GT box short side is 13.9px — smaller than every other class by 2–12×, including the next-smallest (`yacht`, 28.6px) — which plausibly explains the missed/under-confident buckets as a weak-signal problem, not a labeling problem; the confusion that does occur concentrates on `yacht` (the visually closest `small_craft`-group class), corroborated independently by Ultralytics' own confusion matrix (33 speedboat→yacht vs. 6 yacht→speedboat). **Recommendation: a surface speedboat dataset closes the multi-angle gap but would not be expected to fix the aerial recall** — the fix for that would be resolution-side (larger `imgsz`/tiling), not more data, and isn't worth pursuing pre-submission since speedboat isn't a gate class. Full breakdown in §4. Owner: LEAD |
+| 2026-08-05 | **Civilian-as-military false positives to be fixed with DATA, not with the threshold — `civilian_gapfill` acquired (raw only, not trained in)** | Civilian vessels being detected as `military_vessel` is a direct consequence of the deliberate `conf_military = 0.10` operating point, so raising the threshold is off the table: it attacks the one mandatory requirement. The fix is more close-view civilian surface imagery. `scripts/download_civilian_gapfill.py` fetches `boats-ri7td/speedboat` v2 (CC BY 4.0, 6,213 surface imgs) into `data/raw/civilian_gapfill/`. **Nothing is ingested or retrained** — the set is not in `schema.yaml` or `data/processed/`, and all current numbers (gate 0.942 overall / aerial 0.940 / surface 0.954) stand unchanged until a retrain including it is run *and* the gate re-verified. Two facts to carry into ingest: the project name is misleading (18 exported class names; only `Fishing-boats`/`speedboat`/`Yacht`/`tugboat` are vessels, ~67% of boxes carry Roboflow README boilerplate as their label, and there is **no `tanker` class**), and those junk names must be mapped explicitly to `null` rather than wildcarded. Sequenced as **Phase-2 polish**: it improves precision on a non-gate axis, so it must not delay the brief/video, and it must never be merged in un-verified. Owner: DATA-FOR (acquisition) → LEAD (ingest + retrain + re-verify) |
 
 ---
 

@@ -52,7 +52,11 @@ Unchanged ownership: data merge, training, eval, `predict()`, and now the
    explanation DELIV can use.
 3. **Ingest DATA-RMN / DATA-FOR handoffs**: add `schema.yaml` mapping + domain
    entries, run the converter → merge → dedup → validate, add the
-   `data/DATASETS.md` rows.
+   `data/DATASETS.md` rows. **Queued now: `civilian_gapfill`** — downloaded
+   2026-08-05, raw only, aimed at civilian-as-military false positives. Its 13
+   junk class names must be mapped explicitly to `null` (no wildcard), and the
+   military gate must be **re-measured after the retrain** before any figure in
+   the README/PROGRESS/brief moves. Phase-2 polish — must not delay DELIV.
 4. **Build `src/fine_grained/`** once both halves of the bonus set land: crop
    → classify `malaysian_rmn` vs `foreign`, running on `military_vessel`
    detections only. Flip `fine_grained.enabled` in `schema.yaml` when it works.
@@ -268,12 +272,42 @@ the remap.
 a mandatory requirement; Job 1 feeds an optional bonus. If you only have time
 for one before a deadline, this is the one to protect.
 
+#### Status 2026-08-05 — download script ✅ done, ingest ⏳ not started
+
+`scripts/download_civilian_gapfill.py` is written and merged (PR #7). It fetches
+`boats-ri7td/speedboat` v2 (CC BY 4.0, 6,213 surface images) into
+`data/raw/civilian_gapfill/`. Second purpose beyond the multi-angle gap: close-view
+**civilian** imagery to reduce civilian vessels being detected as `military_vessel`.
+
+**What it does and does not cover** — the project is *named* "speedboat" but exports
+**18 class names**, only four of which are vessels (`Fishing-boats` 2,820 ·
+`speedboat` 211 · `Yacht` 170 · `tugboat` 89 boxes); ~67% of boxes carry Roboflow
+README boilerplate as their label. There is **no `tanker` class**, so of the three
+zero-surface classes it covers `speedboat` and `yacht` only — **a `tanker` surface
+source is still outstanding.** Full class list: `data/DATASETS.md`.
+
+**Next, and in this order (LEAD owns all four):**
+1. Map it in `configs/schema.yaml` — junk names explicitly to `null`, **no `"*":`
+   wildcard**; then convert → merge → dedup → validate.
+2. Retrain.
+3. **Re-measure the military gate** (`src/eval/detail.py` → `outputs/eval/test_eval.md`)
+   and confirm it still clears 0.90 on aerial, surface and overall.
+4. Only then update any number in the README, `docs/PROGRESS.md` or the brief.
+
+**Priority: Phase-2 polish.** This improves precision on a non-gate axis, so it must
+not delay the brief, the video, or anything DELIV is blocked on. Until step 3 passes,
+the current figures (aerial 0.940 / surface 0.954 / overall 0.942) are the only ones
+anyone quotes — nothing about this dataset changes them, because it is not in the
+trained model.
+
 ### Done when
 
 `foreign/` matches `malaysian_rmn/` in scale with ≥5 navies and deliberate
 RSN/TNI-AL coverage, manifest validates, **and** the surface gap-fill sets for
 `speedboat`/`tanker`/`yacht` are handed to LEAD as source links with licences
 — both are required outcomes of this role, not one-then-maybe-the-other.
+_(`speedboat` + `yacht` delivered 2026-08-05 via `civilian_gapfill`; `tanker`
+still open.)_
 
 ---
 
