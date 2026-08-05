@@ -204,6 +204,44 @@ def inject_css(light_mode: bool = False) -> None:
       #MainMenu, footer {{ visibility:hidden; }}
       .block-container {{ max-width:1320px; padding-top:.2rem; padding-bottom:2.5rem; }}
       .guardian-entry {{ max-width:1200px; margin:0 auto; }}
+      /* Blur/dim the dashboard's actual pixels while a dialog is open, rather
+         than relying only on a translucent overlay: backdrop-filter blends
+         with whatever colour sits underneath it, and Streamlit's sidebar
+         (#122135) vs main area (#0a1220) are different base colours — even a
+         strong overlay alpha left a visible seam between the two. Filtering
+         the source content itself is colour-independent, so both regions end
+         up genuinely uniform. */
+      body:has([data-testid="stDialog"]) [data-testid="stAppViewContainer"] {{
+        filter:blur(5px) brightness(.4);
+      }}
+      [data-testid="stDialog"] {{
+        position:fixed !important; inset:0 !important;
+        width:100vw !important; height:100vh !important;
+        background:rgba(4,10,17,.35) !important;
+        box-shadow:none !important;
+        padding:2.5rem 1rem;
+      }}
+      /* Streamlit's own internal dialog wrapper (an unlabelled direct child
+         of [data-testid="stDialog"]) ships a built-in rgba(0,0,0,.5)
+         background sized to the dialog's scrollable content height, not the
+         viewport — a second, static-positioned dim layer stacked under our
+         fixed one. It scrolls with the modal's content instead of staying
+         viewport-pinned, which is the "second dark rectangle that follows
+         the modal while scrolling". Neutralised here; our own overlay above
+         already provides the single fullscreen dim/blur. */
+      [data-testid="stDialog"] > div {{
+        background:transparent !important;
+      }}
+      [data-testid="stDialog"] [role="dialog"] {{
+        max-width:1200px; width:92vw; border-radius:10px;
+        margin-top:-38px;
+        padding:0.75rem 3.5rem 2.75rem;
+        background:var(--g-navy);
+        box-shadow:0 8px 24px rgba(0,0,0,.28);
+      }}
+      [data-testid="stDialog"] button[aria-label="Close"] {{
+        display:none;
+      }}
       [data-testid="stHeaderActionElements"] {{ display:none; }}
       [class*="st-key-topbar"] {{ border-bottom:1px solid var(--g-line); padding:0 0 .4rem; margin-bottom:.6rem; }}
       [class*="st-key-topbar"] [data-testid="stHorizontalBlock"] {{ align-items:center; }}
@@ -252,7 +290,7 @@ def inject_css(light_mode: bool = False) -> None:
       .metric-note {{ color:var(--g-muted); font-size:.66rem; }}
       .metric-footer {{ display:flex; gap:1.2rem; flex-wrap:wrap; color:var(--g-muted); font-size:.72rem; margin-top:.6rem; }}
       .metric-footer strong {{ color:var(--g-text); font-weight:600; }}
-      .entry-section {{ margin-top:1.9rem; }}
+      .entry-section {{ margin-top:2.75rem; }}
       .entry-section h2 {{ color:var(--g-text); font-size:1.1rem; font-weight:600; margin:.3rem 0 .45rem; }}
       .entry-section > p {{ color:var(--g-muted); margin:0 0 .85rem; line-height:1.5; font-size:.87rem; }}
       .pipeline-row {{ display:flex; align-items:stretch; gap:0; overflow-x:auto; border-top:1px solid var(--g-line); }}
@@ -805,10 +843,15 @@ def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -
 # ---------------------------------------------------------------------------
 def sidebar() -> dict:
     with st.sidebar:
-        st.toggle("Light Interface", key="guardian_light")
+        # The briefing modal (when shown) renders its own copy of this same
+        # `key="guardian_light"` toggle — Streamlit forbids two widgets with
+        # the same key in one run, so this one only appears once dismissed.
+        if st.session_state["guardian_briefed"]:
+            st.toggle("Light Interface", key="guardian_light")
         st.markdown("### Mission Configuration")
-        if st.button("Return to Mission Entry", use_container_width=True):
-            st.session_state["guardian_view"] = "landing"
+        if st.button("View Operational Briefing", key="sidebar_briefing",
+                      use_container_width=True):
+            st.session_state["guardian_briefed"] = False
             st.rerun()
         st.markdown('<div class="sidebar-group">Model configuration</div>',
                     unsafe_allow_html=True)
@@ -889,8 +932,9 @@ def sidebar() -> dict:
 # ---------------------------------------------------------------------------
 # Mission entry presentation
 # ---------------------------------------------------------------------------
-def _launch_dashboard() -> None:
-    st.session_state["guardian_view"] = "dashboard"
+def _dismiss_briefing() -> None:
+    st.session_state["guardian_briefed"] = True
+    st.rerun()
 
 
 def _show_logo(path: Path, slot, width: int) -> None:
@@ -925,7 +969,7 @@ def landing_page() -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '''<div class="brief-panel" style="margin:.6rem 0 0">
+            '''<div class="brief-panel" style="margin:1.75rem 0 0">
             <div class="info-panel-title">Operational Brief</div>
             <p>Project Guardian is an AI-powered Maritime Domain Awareness platform developed for the
             Strategic Electronic Defence Innovation Challenge (SEDIC) 2026. The system assists maritime
@@ -934,6 +978,11 @@ def landing_page() -> None:
             unsafe_allow_html=True,
         )
 
+        st.markdown('<div style="margin-top:1.75rem"></div>', unsafe_allow_html=True)
+        if st.button("Enter Command Centre", key="entry_launch", type="primary",
+                      use_container_width=False):
+            _dismiss_briefing()
+    with status_col:
         eval_mtime = EVAL_REPORT_PATH.stat().st_mtime if EVAL_REPORT_PATH.exists() else 0.0
         eval_summary = load_eval_summary(str(EVAL_REPORT_PATH), eval_mtime)
         if eval_summary and eval_summary["military_recall_overall"] is not None:
@@ -983,55 +1032,13 @@ def landing_page() -> None:
                 '<code>outputs/eval/test_eval.md</code>.</div>'
             )
         st.markdown(
-            f'''<section class="entry-section" style="margin-top:1.1rem">
+            f'''<section class="entry-section" style="margin-top:0">
             <div class="section-label">Evaluation</div>
             <h2 style="margin:.15rem 0 .3rem">Held-out test performance</h2>
             {eval_body}
             </section>''',
             unsafe_allow_html=True,
         )
-    with status_col:
-        model_ready = gp.DEFAULT_WEIGHTS.exists()
-        model_state = (
-            '<span class="status-value ok"><span class="status-dot"></span>LOADED</span>'
-            if model_ready else
-            '<span class="status-value warn"><span class="status-dot"></span>STUB MODE</span>'
-        )
-        status_rows = [
-            ("Operational Status", '<span class="status-value ok"><span class="status-dot"></span>ONLINE</span>'),
-            ("AI Inference", '<span class="status-value ok"><span class="status-dot"></span>READY</span>'),
-            ("Detection Model", model_state),
-            ("Multi-Object Tracking", '<span class="status-value ok"><span class="status-dot"></span>ENABLED</span>'),
-            ("Deployment", '<span class="status-value neutral"><span class="status-dot"></span>ACTIVE</span>'),
-        ]
-        rows_html = "".join(
-            f'<div class="status-row"><span class="label">{label}</span>{value}</div>'
-            for label, value in status_rows
-        )
-        st.markdown(
-            f'<div class="info-panel" style="margin-top:1.7rem">'
-            f'<div class="info-panel-title">System Status</div>{rows_html}</div>',
-            unsafe_allow_html=True,
-        )
-        meta_rows = [
-            ("Project", APP_TITLE),
-            ("Deployment", "Maritime Operations Centre"),
-            ("Platform", "Computer Vision"),
-            ("Framework", "YOLO11m"),
-            ("Version", "v1.0"),
-        ]
-        meta_html = "".join(
-            f'<div class="meta-row"><span class="k">{k}</span><span class="v">{v}</span></div>'
-            for k, v in meta_rows
-        )
-        st.markdown(
-            f'<div class="info-panel" style="margin-top:.9rem">'
-            f'<div class="info-panel-title">System Information</div>{meta_html}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown('<div style="margin-top:1.4rem"></div>', unsafe_allow_html=True)
-        st.button("Enter Command Centre", key="entry_launch", type="primary",
-                  use_container_width=False, on_click=_launch_dashboard)
 
     st.markdown('<section class="entry-section"><div class="section-label">Detection pipeline</div><h2>Data preparation to tracked contacts</h2><p>A reproducible processing path for maritime imagery and video.</p>', unsafe_allow_html=True)
     pipeline = [
@@ -1078,7 +1085,7 @@ def landing_page() -> None:
     )
     st.markdown(f'<div class="provenance-wrap"><table class="provenance-table"><thead><tr><th>Dataset name</th><th>Domain</th><th>Licence</th><th>Image count</th></tr></thead><tbody>{rows}</tbody></table></div></section>', unsafe_allow_html=True)
     st.caption("* ShipRSImageNet derives from academic/research-use imagery; attribution is retained in the project provenance log.")
-    st.markdown('<div class="ack-panel" style="margin-top:1.5rem"><div class="section-label">SEDIC 2026 acknowledgement</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ack-panel" style="margin-top:2.2rem"><div class="section-label">SEDIC 2026 acknowledgement</div></div>', unsafe_allow_html=True)
     asset_dir = _REPO_ROOT / "app" / "assets"
     acknowledgement = st.columns((.95, 1.55, 1.25, .85, .78, .92), gap="small")
     with acknowledgement[0]:
@@ -1097,20 +1104,38 @@ def landing_page() -> None:
     return
 
 
+@st.dialog(" ", width="large")
+def show_operational_briefing() -> None:
+    """Startup overlay: the landing page, unchanged, shown as a dismissable
+    briefing modal over the dashboard instead of routed to as its own page.
+
+    Uses Streamlit's native st.dialog rather than a hand-rolled fixed-position
+    CSS overlay — the earlier custom backdrop broke under real browser window
+    sizes (horizontal overflow left it not actually covering the viewport).
+    st.dialog handles centring, backdrop and internal scrolling natively.
+    Its own built-in close (X) is hidden via CSS: closing it that way doesn't
+    set `guardian_briefed`, so the next rerun would immediately reopen it —
+    dismissal only happens through the "Enter Command Centre" button below,
+    which does set the flag.
+    """
+    landing_page()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    if "guardian_view" not in st.session_state:
-        st.session_state["guardian_view"] = "landing"
+    if "guardian_briefed" not in st.session_state:
+        st.session_state["guardian_briefed"] = False
     if "guardian_light" not in st.session_state:
         st.session_state["guardian_light"] = False
     inject_css(st.session_state["guardian_light"])
-    if st.session_state["guardian_view"] != "dashboard":
-        landing_page()
-        return
-    render_header()
+
+    # The upload dashboard is always the home screen now; the landing page
+    # renders as a dismissable briefing overlay on top of it on first load.
     settings = sidebar()
+    if not st.session_state["guardian_briefed"]:
+        show_operational_briefing()
 
     # Warm the weights up front so the first real detection isn't the slow one.
     if not settings["stub"] and Path(settings["weights"]).exists():
@@ -1121,34 +1146,76 @@ def main() -> None:
                      "enable stub mode in the sidebar to continue the demo.")
             return
 
-    uploaded = st.file_uploader(
-        "Upload an image or video",
-        type=sorted(s.lstrip(".") for s in IMAGE_SUFFIXES | VIDEO_SUFFIXES),
-        help="Surface/frontal or aerial imagery. Video runs through the tracker.",
-    )
+    # Left: the operational workflow (upload, detections, preview, metrics).
+    # Right: the operational summary column — live system status/info, moved
+    # here from the briefing modal so they stay visible while using the app.
+    left_col, right_col = st.columns((2, 1), gap="large")
 
-    if uploaded is None:
-        if settings["stub"]:
-            st.caption("No file yet — showing the stub scene.")
-            image_view(None, ".jpg", settings, "synthetic scene")
+    with right_col:
+        model_ready = gp.DEFAULT_WEIGHTS.exists()
+        model_state = (
+            '<span class="status-value ok"><span class="status-dot"></span>LOADED</span>'
+            if model_ready else
+            '<span class="status-value warn"><span class="status-dot"></span>STUB MODE</span>'
+        )
+        status_rows = [
+            ("Operational Status", '<span class="status-value ok"><span class="status-dot"></span>ONLINE</span>'),
+            ("AI Inference", '<span class="status-value ok"><span class="status-dot"></span>READY</span>'),
+            ("Detection Model", model_state),
+            ("Multi-Object Tracking", '<span class="status-value ok"><span class="status-dot"></span>ENABLED</span>'),
+            ("Deployment", '<span class="status-value neutral"><span class="status-dot"></span>ACTIVE</span>'),
+        ]
+        rows_html = "".join(
+            f'<div class="status-row"><span class="label">{label}</span>{value}</div>'
+            for label, value in status_rows
+        )
+        st.markdown(
+            f'<div class="info-panel"><div class="info-panel-title">System Status</div>{rows_html}</div>',
+            unsafe_allow_html=True,
+        )
+        meta_rows = [
+            ("Project", APP_TITLE),
+            ("Deployment", "Maritime Operations Centre"),
+            ("Platform", "Computer Vision"),
+            ("Framework", "YOLO11m"),
+            ("Version", "v1.0"),
+        ]
+        meta_html = "".join(
+            f'<div class="meta-row"><span class="k">{k}</span><span class="v">{v}</span></div>'
+            for k, v in meta_rows
+        )
+        st.markdown(
+            f'<div class="info-panel" style="margin-top:.9rem">'
+            f'<div class="info-panel-title">System Information</div>{meta_html}</div>',
+            unsafe_allow_html=True,
+        )
+
+    with left_col:
+        uploaded = st.file_uploader(
+            "Upload an image or video",
+            type=sorted(s.lstrip(".") for s in IMAGE_SUFFIXES | VIDEO_SUFFIXES),
+            help="Surface/frontal or aerial imagery. Video runs through the tracker.",
+        )
+
+        if uploaded is None:
+            if settings["stub"]:
+                st.caption("No file yet — showing the stub scene.")
+                image_view(None, ".jpg", settings, "synthetic scene")
+            else:
+                st.info("Upload an image or video to begin. Detection runs "
+                        "automatically for images.")
         else:
-            st.info("Upload an image or video to begin. Detection runs "
-                    "automatically for images.")
-        return
-
-    suffix = Path(uploaded.name).suffix.lower()
-    payload = uploaded.getvalue()
-    if not payload:
-        st.error("That file came through empty. Try uploading it again.")
-        return
-
-    if suffix in IMAGE_SUFFIXES:
-        image_view(payload, suffix, settings, uploaded.name)
-    elif suffix in VIDEO_SUFFIXES:
-        video_view(payload, suffix, settings, uploaded.name)
-    else:
-        st.error(f"**{suffix or 'That file type'}** isn't supported. Use JPG/PNG "
-                 "images or MP4/MOV/AVI video.")
+            suffix = Path(uploaded.name).suffix.lower()
+            payload = uploaded.getvalue()
+            if not payload:
+                st.error("That file came through empty. Try uploading it again.")
+            elif suffix in IMAGE_SUFFIXES:
+                image_view(payload, suffix, settings, uploaded.name)
+            elif suffix in VIDEO_SUFFIXES:
+                video_view(payload, suffix, settings, uploaded.name)
+            else:
+                st.error(f"**{suffix or 'That file type'}** isn't supported. Use JPG/PNG "
+                         "images or MP4/MOV/AVI video.")
 
 
 main()
