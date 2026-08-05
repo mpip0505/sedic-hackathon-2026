@@ -114,6 +114,7 @@ cat data/raw/seaships/data.yaml                        # check class name string
 | `seaships` | surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 | CC BY 4.0 |
 | `shiprsimagenet` | aerial | ~4.6k | YOLO (Roboflow) | `convertvoctoyolo/shiprsimagenet` v39 | CC BY 4.0¹ |
 | `military_surface` | **surface** | ~3.0k | YOLO (Roboflow) | `hannah-agkvq/military-ship-detection-qxv5m` v2 | CC BY 4.0 |
+| `civilian_gapfill` | surface | ~6.2k | YOLO (Roboflow) | `boats-ri7td/speedboat` v2 | CC BY 4.0 |
 
 All arrive **already in YOLO format** with their own `train/valid/test` split —
 that split is **discarded**; `merge.py` does its own stratified split. The Roboflow
