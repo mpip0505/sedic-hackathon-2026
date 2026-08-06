@@ -140,8 +140,12 @@ def inject_css(light_mode: bool = False) -> None:
                 border-radius:8px;
                 box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
               }
-              .chip-row, .metric-grid.secondary, .table-wrap {
+              .chip-row, .metric-grid.secondary {
                 border-radius:8px; overflow:hidden;
+                box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+              }
+              .table-wrap {
+                border-radius:8px;
                 box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
               }
               .entry-intro {
@@ -166,17 +170,14 @@ def inject_css(light_mode: bool = False) -> None:
               }
               [class*="st-key-entry_launch"] button[kind="primary"] {
                 background:#1f4d3a !important; border:1px solid #3f7a61 !important;
-                border-radius:8px !important; box-shadow:0 1px 2px rgba(15,23,42,.12);
+                border-radius:10px !important; box-shadow:0 1px 2px rgba(15,23,42,.12);
               }
               [class*="st-key-entry_launch"] button[kind="primary"]::after {
-                color:#fff; transition:transform .15s ease;
+                color:#fff;
               }
               [class*="st-key-entry_launch"] button[kind="primary"]:hover {
-                background:#29634b !important; border-color:#3f7a61 !important;
-                filter:none !important; box-shadow:0 2px 6px rgba(15,23,42,.18);
-              }
-              [class*="st-key-entry_launch"] button[kind="primary"]:hover::after {
-                transform:translateX(3px);
+                background:#2c6e50 !important; border-color:#4f8f70 !important;
+                filter:none !important; box-shadow:0 4px 14px rgba(15,23,42,.2);
               }
         """
 
@@ -202,7 +203,7 @@ def inject_css(light_mode: bool = False) -> None:
       [data-testid="stHeader"] {{ background:transparent; pointer-events:none; }}
       [data-testid="stHeader"] * {{ pointer-events:auto; }}
       #MainMenu, footer {{ visibility:hidden; }}
-      .block-container {{ max-width:1320px; padding-top:.2rem; padding-bottom:2.5rem; }}
+      .block-container {{ max-width:1320px; padding-top:3.25rem; padding-bottom:2.5rem; }}
       .guardian-entry {{ max-width:1200px; margin:0 auto; }}
       /* Blur/dim the dashboard's actual pixels while a dialog is open, rather
          than relying only on a translucent overlay: backdrop-filter blends
@@ -249,11 +250,11 @@ def inject_css(light_mode: bool = False) -> None:
       .entry-brand {{ color:var(--g-text); font-weight:700; font-size:.86rem; letter-spacing:.13em; }}
       .entry-brand span {{ color:var(--g-cyan); font-weight:500; }}
       .sedic-badge {{ border:1px solid var(--g-line); color:var(--g-text); padding:.32rem .55rem; font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; position:relative; top:-8px; }}
-      .entry-intro {{ padding:0 0 .7rem; border-bottom:1px solid var(--g-line); }}
+      .entry-intro {{ padding:0 0 .85rem; border-bottom:1px solid var(--g-line); }}
       .section-label {{ color:var(--g-cyan); font-size:.67rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }}
-      .entry-intro h1 {{ color:var(--g-text); margin:.3rem 0 .3rem; font-size:2.05rem; font-weight:600; letter-spacing:0; line-height:1.15; }}
-      .entry-subtitle {{ color:var(--g-muted); font-size:.92rem; font-weight:500; margin:0; }}
-      .entry-summary {{ color:var(--g-muted); line-height:1.4; max-width:640px; margin:.4rem 0 0; font-size:.88rem; }}
+      .entry-intro h1 {{ color:var(--g-text); margin:.35rem 0 .55rem; font-size:2.75rem; font-weight:600; letter-spacing:0; line-height:1.15; }}
+      .entry-subtitle {{ color:var(--g-muted); font-size:1.15rem; font-weight:500; margin:0; letter-spacing:.01em; }}
+      .entry-summary {{ color:var(--g-muted); line-height:1.6; max-width:640px; margin:.75rem 0 0; font-size:1rem; }}
       .info-panel {{ border:1px solid var(--g-line); background:var(--g-panel); padding:.85rem 1rem; }}
       .info-panel-title {{ color:var(--g-muted); font-size:.63rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; margin-bottom:.6rem; }}
       .status-row {{ display:flex; justify-content:space-between; align-items:center; padding:.42rem 0; border-bottom:1px solid var(--g-line); font-size:.82rem; }}
@@ -267,28 +268,36 @@ def inject_css(light_mode: bool = False) -> None:
       .status-value.warn .status-dot {{ background:var(--g-amber); }}
       .status-value.neutral {{ color:var(--g-cyan); }}
       .status-value.neutral .status-dot {{ background:var(--g-cyan); }}
-      .brief-panel {{ border:1px solid var(--g-line); background:var(--g-panel); padding:.65rem 1rem; height:100%; }}
+      .brief-panel {{ border:1px solid var(--g-line); background:var(--g-panel); padding:.9rem 1.25rem; height:100%; }}
       .brief-panel p {{ color:var(--g-muted); line-height:1.6; font-size:.85rem; margin:0; }}
       .meta-row {{ display:flex; justify-content:space-between; padding:.34rem 0; border-bottom:1px solid var(--g-line); font-size:.82rem; }}
       .meta-row .k {{ color:var(--g-muted); }}
       .meta-row .v {{ color:var(--g-text); font-weight:600; }}
       .performance-heading {{ display:flex; justify-content:space-between; gap:1rem; align-items:baseline; margin-bottom:.6rem; }}
       .performance-heading span {{ color:var(--g-muted); font-size:.65rem; letter-spacing:.1em; text-transform:uppercase; }}
-      .mil-recall-card {{ border:1px solid var(--g-line); border-left:3px solid var(--g-red); background:var(--g-panel); padding:.9rem 1.05rem; }}
-      .mil-recall-label {{ color:var(--g-red); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }}
-      .mil-recall-value {{ color:var(--g-text); font-size:2.4rem; font-weight:700; line-height:1.05; margin:.3rem 0 .4rem; }}
-      .mil-recall-status {{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; font-size:.78rem; }}
+      /* Evaluation panel scaled ~18% so it carries visual weight closer to
+         the hero column beside it. .section-label / entry-section h2 are
+         shared with the pipeline/taxonomy/provenance sections further down
+         the page, so those two are scoped to .eval-section specifically;
+         everything prefixed mil-recall- or metric- below is exclusive to
+         this panel already and safe to scale directly. */
+      .eval-section .section-label {{ font-size:.8rem; }}
+      .entry-section.eval-section h2 {{ font-size:1.3rem; }}
+      .mil-recall-card {{ border:1px solid var(--g-line); border-left:3px solid var(--g-red); background:var(--g-panel); padding:1.05rem 1.25rem; }}
+      .mil-recall-label {{ color:var(--g-red); font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }}
+      .mil-recall-value {{ color:var(--g-text); font-size:2.85rem; font-weight:700; line-height:1.05; margin:.35rem 0 .45rem; }}
+      .mil-recall-status {{ display:flex; align-items:center; gap:.8rem; flex-wrap:wrap; font-size:.92rem; }}
       .mil-recall-check {{ color:var(--g-green); font-weight:600; }}
       .mil-recall-check.fail {{ color:var(--g-red); }}
       .mil-recall-target {{ color:var(--g-muted); }}
       .metric-grid.secondary {{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--g-line); border:1px solid var(--g-line); border-top:none; }}
-      .metric-cell {{ background:var(--g-panel); padding:.5rem .8rem; }}
+      .metric-cell {{ background:var(--g-panel); padding:.6rem .95rem; }}
       .eval-pending {{ border:1px solid var(--g-line); background:var(--g-panel); padding:.75rem .9rem; color:var(--g-muted); font-size:.82rem; line-height:1.55; }}
       .eval-pending code {{ background:var(--g-panel-2); padding:.05rem .3rem; font-size:.78rem; }}
-      .metric-label {{ color:var(--g-muted); font-size:.6rem; letter-spacing:.08em; text-transform:uppercase; }}
-      .metric-value {{ color:var(--g-muted); font-size:1.05rem; font-weight:600; margin:.2rem 0 .05rem; }}
-      .metric-note {{ color:var(--g-muted); font-size:.66rem; }}
-      .metric-footer {{ display:flex; gap:1.2rem; flex-wrap:wrap; color:var(--g-muted); font-size:.72rem; margin-top:.6rem; }}
+      .metric-label {{ color:var(--g-muted); font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; }}
+      .metric-value {{ color:var(--g-muted); font-size:1.25rem; font-weight:600; margin:.25rem 0 .05rem; }}
+      .metric-note {{ color:var(--g-muted); font-size:.78rem; }}
+      .metric-footer {{ display:flex; gap:1.3rem; flex-wrap:wrap; color:var(--g-muted); font-size:.85rem; margin-top:.7rem; }}
       .metric-footer strong {{ color:var(--g-text); font-weight:600; }}
       .entry-section {{ margin-top:2.75rem; }}
       .entry-section h2 {{ color:var(--g-text); font-size:1.1rem; font-weight:600; margin:.3rem 0 .45rem; }}
@@ -319,22 +328,125 @@ def inject_css(light_mode: bool = False) -> None:
       .entry-footer {{ color:var(--g-muted); font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; padding:1rem 0; }}
       [data-testid="stButton"] button[kind="primary"] {{ background:var(--g-cyan); color:#f2f7f8; border:1px solid var(--g-cyan); border-radius:2px; font-weight:600; }}
       [data-testid="stButton"] button[kind="primary"]:hover {{ background:var(--g-cyan); opacity:.92; }}
+      /* Centering is handled by the [1,1.3,1] column layout around the
+         button in landing_page(), not CSS — this block only styles it.
+         Streamlit's own flex gap between element-containers floors at
+         16px regardless of a spacer element's own height, so pulling the
+         CTA's column row closer to the brief card needs a negative margin
+         on the row itself (a real flex item), not a spacer div. */
+      [data-testid="stHorizontalBlock"]:has([class*="st-key-entry_launch"]) {{
+        margin-top:22px;
+      }}
+      /* font-size uses clamp() so the label shrinks just enough to stay on
+         one line as the briefing dialog narrows below ~1280px (it's
+         width:92vw under a 1200px cap, so its content — including this
+         button — scales down with the viewport at smaller sizes). Fixed
+         at 19px would wrap to two lines around 1024px wide. */
       [class*="st-key-entry_launch"] button[kind="primary"] {{
         background:#1f4d3a; color:#ffffff; border:1px solid #3f7a61;
-        border-radius:5px; height:48px; min-width:300px; width:auto;
-        padding:0 1.3rem; font-weight:600; font-size:.86rem; letter-spacing:.02em;
+        border-radius:10px;
+        padding:.85rem 1.1rem; font-weight:700; font-size:clamp(13px, 2.34vw - 11px, 19px); letter-spacing:.01em;
         display:flex; align-items:center; justify-content:flex-start;
+        transition:background .2s ease, border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+        box-shadow:0 1px 2px rgba(0,0,0,.2);
       }}
-      [class*="st-key-entry_launch"] button[kind="primary"] p {{ text-align:left; margin:0; }}
+      /* Streamlit's own rule setting font-size:1rem on p/ol/ul/dl elements
+         applies directly to this <p>, so it does NOT inherit the clamp()
+         above from the button by default — without this override
+         the text silently stays at 16px regardless of the button's own
+         font-size (the bug behind the two-line wrap at ~1024px). */
+      [class*="st-key-entry_launch"] button[kind="primary"] p {{ text-align:left; margin:0; font-size:inherit; }}
       [class*="st-key-entry_launch"] button[kind="primary"]::after {{
-        content:"→"; margin-left:auto; padding-left:1.4rem; color:#ffffff; font-weight:600;
+        content:"→"; margin-left:auto; padding-left:1.6rem; color:#ffffff; font-weight:700;
+        transition:transform .2s ease;
       }}
       [class*="st-key-entry_launch"] button[kind="primary"]:hover {{
-        background:#29634b; border-color:#3f7a61; filter:none;
+        background:#2c6e50; border-color:#4f8f70; filter:none;
+        box-shadow:0 4px 14px rgba(0,0,0,.28); transform:translateY(-1px);
+      }}
+      [class*="st-key-entry_launch"] button[kind="primary"]:hover::after {{
+        transform:translateX(4px);
       }}
       [data-testid="stSidebar"] {{ border-right:1px solid var(--g-line); }}
       [data-testid="stSidebar"] h3 {{ color:var(--g-text); font-size:.9rem; letter-spacing:.04em; }}
-      .sidebar-group {{ color:var(--g-muted); font-size:.63rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; margin:.75rem 0 .3rem; }}
+      /* Containment: Streamlit's widget wrappers are flex children, which
+         default to min-width:auto — long content (e.g. the weights path)
+         then forces them to their intrinsic width regardless of how much
+         room the card actually has, pushing widgets/icons past the card
+         edge. Resetting box-sizing/min-width/max-width on every descendant
+         is what actually stops that, not just padding tweaks. */
+      [data-testid="stSidebar"], [data-testid="stSidebar"] * {{ box-sizing:border-box; }}
+      [data-testid="stSidebar"] [class*="st-key-sb_card_"] {{
+        background:var(--g-panel); border:1px solid var(--g-line);
+        border-radius:8px; padding:1rem 1.1rem;
+        width:100%; max-width:100%; overflow:hidden;
+      }}
+      /* Extra breathing room below the Models card specifically — it's
+         followed by a sibling group (AI Operating Thresholds) within the
+         same section, not a new section, so it needs the ~20-24px group
+         rhythm rather than the ~32px used between sections. Set directly
+         on the card (a real flex item) rather than via a spacer element:
+         an empty spacer element-container floors at 32px regardless of
+         its own height, since Streamlit's own inter-element gap is what
+         dominates then, not this element's height/margin. */
+      [data-testid="stSidebar"] [class*="st-key-sb_card_model"] {{
+        margin-bottom:16px; padding:16px 24px 30px;
+      }}
+      [data-testid="stSidebar"] [class*="st-key-sb_card_"] * {{
+        min-width:0; max-width:100%;
+      }}
+      [data-testid="stSidebar"] [data-testid="stTextInput"] input,
+      [data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+      [data-testid="stSidebar"] [data-baseweb="select"] {{
+        width:100%; max-width:100%;
+      }}
+      [data-testid="stSidebar"] [data-testid="stTextInput"] input {{
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      }}
+      /* BaseWeb reserves ~9px of padding-top on every slider so the
+         floating value bubble (e.g. "0.25") doesn't collide with the
+         label above it. Tightened, not removed — zeroing it would clip
+         the bubble into the label text. */
+      [data-testid="stSidebar"] [data-testid="stSlider"] [data-baseweb="slider"] {{
+        padding-top:7px;
+      }}
+      .sb-label {{ color:var(--g-muted); font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; margin:0 0 1rem; }}
+      .sb-title {{ color:var(--g-text); font-size:1.5rem; font-weight:700; margin:0 0 1rem; line-height:1.15; }}
+      .sb-group-label {{ color:var(--g-muted); font-size:.8rem; letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin:0 0 .5rem; }}
+      .sb-value {{ font-size:.85rem; color:var(--g-muted); margin:-2px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+      .sb-desc {{
+        color:var(--g-muted); font-size:.8rem; line-height:1.45; text-align:left;
+        white-space:normal; overflow-wrap:break-word; word-break:break-word;
+        width:100%; max-width:100%; margin:0 0 10px;
+      }}
+      /* One shared rule for every widget label row (text input, slider,
+         select, toggle, ...): label text on the left, help icon pinned to
+         the far right — so every row in the sidebar uses the identical
+         layout mechanism instead of one-off nudges per widget type. */
+      [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {{
+        display:flex; align-items:center; justify-content:space-between; width:100%;
+      }}
+      /* Toggle/checkbox rows put the switch, a hidden input and the label
+         wrapper as siblings of one outer flex row. Giving that row
+         align-items:center + a gap groups switch+text on the left, and
+         making the label-wrapper flex:1 lets the shared rule above push
+         its own help icon out to the same far-right edge the text-input
+         rows already use — the same mechanism, not a separate one. */
+      [data-testid="stSidebar"] [data-baseweb="checkbox"] {{
+        display:flex; align-items:center; gap:10px; width:100%; padding-right:0;
+      }}
+      [data-testid="stSidebar"] [data-baseweb="checkbox"] > div:has([data-testid="stWidgetLabel"]) {{
+        flex:1;
+      }}
+      .sb-value b {{ color:var(--g-text); font-weight:600; }}
+      [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ font-size:.98rem; font-weight:500; }}
+      [class*="st-key-sidebar_briefing"] button {{ display:flex; align-items:center; justify-content:space-between; text-align:left; font-weight:600; font-size:.85rem; background:var(--g-panel); border:1px solid var(--g-line); border-left:3px solid var(--g-cyan); border-radius:8px; padding:.8rem 1.1rem; width:100%; max-width:100%; }}
+      [class*="st-key-sidebar_briefing"] button::after {{ content:"→"; color:var(--g-cyan); margin-left:.6rem; font-weight:700; transition:transform .15s ease; flex:none; }}
+      [class*="st-key-sidebar_briefing"] button:hover {{ background:var(--g-panel-2); border-color:var(--g-cyan); }}
+      [class*="st-key-sidebar_briefing"] button:hover::after {{ transform:translateX(3px); }}
+      .sb-legend {{ display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.5rem; max-width:100%; }}
+      .sb-legend-pill {{ display:inline-flex; align-items:center; gap:.4rem; padding:.42rem .85rem; border-radius:999px; font-size:.76rem; font-weight:600; line-height:1; }}
+      .sb-legend-dot {{ width:7px; height:7px; border-radius:50%; flex:none; }}
       .guardian-header {{ background:var(--g-panel); border:1px solid var(--g-line); border-left:3px solid var(--g-cyan); padding:.9rem 1.15rem; margin-bottom:1rem; }}
       .guardian-header h1 {{ margin:0; font-size:1.35rem; font-weight:600; letter-spacing:0; color:var(--g-text); }}
       .guardian-header h1 span {{ color:var(--g-muted); font-weight:500; }}
@@ -347,8 +459,17 @@ def inject_css(light_mode: bool = False) -> None:
       .chip .k {{ font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--g-muted); }}
       .chip .v {{ font-size:1.3rem; font-weight:600; line-height:1.15; color:var(--g-text); }}
       .legend-swatch {{ display:inline-block; width:9px; height:9px; margin-right:.35rem; vertical-align:middle; border:1px solid var(--g-line); }}
-      .table-wrap {{ max-height:460px; overflow:auto; border:1px solid var(--g-line); }}
-      .det-table {{ width:100%; border-collapse:collapse; font-size:.87rem; }}
+      .table-wrap {{ overflow-x:auto; overflow-y:auto; border:1px solid var(--g-line); max-height:none; }}
+      .table-wrap.scrollable {{ max-height:460px; }}
+      /* Streamlit's own markdown-container stylesheet applies a
+         margin-bottom:1rem to any <table> rendered via unsafe_allow_html
+         (selector specificity: class + type, e.g. ".st-emotion-cache-xxx
+         table"), which beats a plain ".det-table" class selector despite
+         coming first in the cascade — that 16px was the "empty space
+         below the table" bug, not table-wrap or any parent height rule.
+         !important because that generated class name isn't something we
+         can target directly (it changes across Streamlit builds). */
+      .det-table {{ width:100%; border-collapse:separate; border-spacing:0; font-size:.87rem; margin:0 !important; }}
       .det-table th {{ position:sticky; top:0; text-align:left; padding:.5rem .7rem; font-weight:600; text-transform:uppercase; font-size:.72rem; letter-spacing:.6px; background:var(--g-panel-2); color:var(--g-muted); border-bottom:1px solid var(--g-line); }}
       .det-table td {{ padding:.42rem .7rem; color:var(--g-text); border-bottom:1px solid var(--g-line); }}
       {light_only_css}
@@ -602,9 +723,13 @@ def render_table(df: pd.DataFrame) -> None:
             f'<tr style="background:{colour}1f;border-left:3px solid {colour}">'
             f"{cells}</tr>"
         )
+    # Only cap the height (and start scrolling) once there are enough rows
+    # that the table would otherwise run long — small tables hug their
+    # content instead of reserving a tall, mostly-empty box.
+    wrap_class = "table-wrap scrollable" if len(df) > 10 else "table-wrap"
     st.markdown(
         f"""
-        <div class="table-wrap">
+        <div class="{wrap_class}">
           <table class="det-table">
             <thead><tr>{head}</tr></thead>
             <tbody>{"".join(body)}</tbody>
@@ -841,6 +966,24 @@ def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
+def _sb_break(px: int = 8) -> None:
+    """Fixed-height break with a faint centred rule, between major sections
+    (Mission / Model Configuration / Video Processing / Classification) —
+    replaces st.divider() so the gap is an exact, consistent value rather
+    than whatever Streamlit's own widget-to-widget margin happens to add
+    up to."""
+    st.markdown(
+        f'<div style="height:{px}px;display:flex;align-items:center;">'
+        f'<div style="height:1px;width:100%;background:var(--g-line);opacity:.5;"></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _sb_gap(px: int = 40) -> None:
+    st.markdown(f'<div style="height:{px}px"></div>', unsafe_allow_html=True)
+
+
 def sidebar() -> dict:
     with st.sidebar:
         # The briefing modal (when shown) renders its own copy of this same
@@ -848,75 +991,95 @@ def sidebar() -> dict:
         # the same key in one run, so this one only appears once dismissed.
         if st.session_state["guardian_briefed"]:
             st.toggle("Light Interface", key="guardian_light")
-        st.markdown("### Mission Configuration")
-        if st.button("View Operational Briefing", key="sidebar_briefing",
-                      use_container_width=True):
+            st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="sb-label">Mission</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sb-desc">Access the operational brief, mission pipeline, detection taxonomy and dataset provenance.</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Operational Briefing", key="sidebar_briefing", use_container_width=True):
             st.session_state["guardian_briefed"] = False
             st.rerun()
-        st.markdown('<div class="sidebar-group">Model configuration</div>',
-                    unsafe_allow_html=True)
-        st.markdown("### Detection controls")
 
-        weights_default = str(gp.DEFAULT_WEIGHTS)
-        have_weights = gp.DEFAULT_WEIGHTS.exists()
-        stub = st.toggle(
-            "Stub mode (no model)",
-            value=not have_weights,
-            help="Synthetic detections — a safe fallback if weights are missing.",
-        )
-        weights = st.text_input(
-            "Weights (.pt)", value=weights_default, disabled=stub,
-            help="Ignored in stub mode.",
-        )
-        if not stub:
-            if Path(weights).exists():
-                st.caption(f"Model: `{Path(weights).name}`")
-            else:
-                st.error("Weights file not found — enable stub mode or fix the path.")
+        _sb_break()
 
-        st.divider()
-        st.markdown('<div class="sidebar-group">AI operating thresholds</div>',
+        # Section: Model Configuration — one main title ("Detection
+        # Controls") covering two grouped cards (Models, AI Operating
+        # Thresholds), matching a settings-panel hierarchy: section > title
+        # > group > control.
+        st.markdown('<div class="sb-label">Model Configuration</div>',
                     unsafe_allow_html=True)
-        conf = st.slider(
-            "Confidence — civilian", 0.0, 0.95, DEFAULT_CONF, 0.01,
-            help="Threshold for non-military classes.",
-        )
-        conf_military = st.slider(
-            "Confidence — military", 0.0, 0.95, DEFAULT_CONF_MILITARY, 0.01,
-            help="Threshold for the military group. Lower it to trade precision "
-                 "for recall — the competition gate is recall > 90%.",
-        )
-        if conf_military > conf:
-            st.warning("Military threshold above the civilian one weakens the "
-                       "recall gate.")
+        st.markdown('<div class="sb-title">Detection Controls</div>',
+                    unsafe_allow_html=True)
 
-        st.divider()
-        st.markdown("**Video**")
-        st.markdown('<div class="sidebar-group">Video tracking</div>',
-                    unsafe_allow_html=True)
-        tracker = st.selectbox(
-            "Tracker", ["botsort.yaml", "bytetrack.yaml"], index=0,
-            help="BoT-SORT gives more stable IDs; ByteTrack is faster.",
-        )
-        vid_stride = st.slider(
-            "Frame stride", 1, 5, 1,
-            help="Process every Nth frame. Raise it for faster playback.",
-        )
-        max_frames = st.number_input(
-            "Max frames", min_value=30, max_value=5000, value=600, step=30,
-            help="Safety stop so a long clip can't stall a live demo.",
-        )
+        st.markdown('<div class="sb-group-label">Models</div>', unsafe_allow_html=True)
+        with st.container(key="sb_card_model"):
+            weights_default = str(gp.DEFAULT_WEIGHTS)
+            have_weights = gp.DEFAULT_WEIGHTS.exists()
+            stub = st.toggle(
+                "Stub mode (no model)",
+                value=not have_weights,
+                help="Synthetic detections — a safe fallback if weights are missing.",
+            )
+            weights = st.text_input(
+                "Weights (.pt)", value=weights_default, disabled=stub,
+                help="Ignored in stub mode.",
+            )
+            if not stub:
+                if Path(weights).exists():
+                    st.markdown(
+                        f'<div class="sb-value">Model <b>{Path(weights).name}</b></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.error("Weights file not found — enable stub mode or fix the path.")
 
-        st.divider()
-        st.markdown('<div class="sidebar-group">Classification legend</div>',
+        st.markdown('<div class="sb-group-label">AI Operating Thresholds</div>',
                     unsafe_allow_html=True)
-        legend = "".join(
-            f'<div><span class="legend-swatch" style="background:{hexcol}"></span>'
-            f'<span style="font-size:.85rem">{label}</span></div>'
+        with st.container(key="sb_card_thresholds"):
+            conf = st.slider(
+                "Confidence — civilian", 0.0, 0.95, DEFAULT_CONF, 0.01,
+                help="Threshold for non-military classes.",
+            )
+            conf_military = st.slider(
+                "Confidence — military", 0.0, 0.95, DEFAULT_CONF_MILITARY, 0.01,
+                help="Threshold for the military group. Lower it to trade precision "
+                     "for recall — the competition gate is recall > 90%.",
+            )
+            if conf_military > conf:
+                st.warning("Military threshold above the civilian one weakens the "
+                           "recall gate.")
+
+        _sb_break()
+
+        st.markdown('<div class="sb-label">Video Tracking</div>', unsafe_allow_html=True)
+        with st.container(key="sb_card_video"):
+            tracker = st.selectbox(
+                "Tracker", ["botsort.yaml", "bytetrack.yaml"], index=0,
+                help="BoT-SORT gives more stable IDs; ByteTrack is faster.",
+            )
+            vid_stride = st.slider(
+                "Frame stride", 1, 5, 1,
+                help="Process every Nth frame. Raise it for faster playback.",
+            )
+            max_frames = st.number_input(
+                "Max frames", min_value=30, max_value=5000, value=600, step=30,
+                help="Safety stop so a long clip can't stall a live demo.",
+            )
+
+        _sb_break()
+
+        st.markdown('<div class="sb-label">Classification</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-group-label">Legend</div>', unsafe_allow_html=True)
+        pills = "".join(
+            f'<span class="sb-legend-pill" style="background:{hexcol}22;'
+            f'border:1px solid {hexcol}55;color:var(--g-text)">'
+            f'<span class="sb-legend-dot" style="background:{hexcol}"></span>{label}</span>'
             for group, (_, hexcol, label) in GROUP_COLOURS.items()
             if group != "other"
         )
-        st.markdown(f"**Legend**{legend}", unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-legend">{pills}</div>', unsafe_allow_html=True)
 
     return {
         "stub": stub,
@@ -958,7 +1121,7 @@ def landing_page() -> None:
                         unsafe_allow_html=True)
         with top[2]:
             st.toggle("Light Interface", key="guardian_light")
-    hero_col, status_col = st.columns((1.9, 1), gap="large")
+    hero_col, status_col = st.columns((1.7, 1), gap="large")
     with hero_col:
         st.markdown(
             '''<div class="entry-intro">
@@ -978,10 +1141,13 @@ def landing_page() -> None:
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div style="margin-top:1.75rem"></div>', unsafe_allow_html=True)
-        if st.button("Enter Command Centre", key="entry_launch", type="primary",
-                      use_container_width=False):
-            _dismiss_briefing()
+        left, centre, right = st.columns([1, 1.9, 1])
+        with centre:
+            if st.button(
+                "Enter Command Centre", key="entry_launch", type="primary",
+                use_container_width=True,
+            ):
+                _dismiss_briefing()
     with status_col:
         eval_mtime = EVAL_REPORT_PATH.stat().st_mtime if EVAL_REPORT_PATH.exists() else 0.0
         eval_summary = load_eval_summary(str(EVAL_REPORT_PATH), eval_mtime)
@@ -1032,9 +1198,9 @@ def landing_page() -> None:
                 '<code>outputs/eval/test_eval.md</code>.</div>'
             )
         st.markdown(
-            f'''<section class="entry-section" style="margin-top:0">
+            f'''<section class="entry-section eval-section" style="margin-top:0">
             <div class="section-label">Evaluation</div>
-            <h2 style="margin:.15rem 0 .3rem">Held-out test performance</h2>
+            <h2 style="margin:.2rem 0 .35rem">Held-out test performance</h2>
             {eval_body}
             </section>''',
             unsafe_allow_html=True,
@@ -1146,12 +1312,21 @@ def main() -> None:
                      "enable stub mode in the sidebar to continue the demo.")
             return
 
-    # Left: the operational workflow (upload, detections, preview, metrics).
-    # Right: the operational summary column — live system status/info, moved
-    # here from the briefing modal so they stay visible while using the app.
-    left_col, right_col = st.columns((2, 1), gap="large")
+    # Primary action first: the upload workflow is the hero and stays at the
+    # top, uncontested. Operational summary (System Status/Information)
+    # follows below as supporting context, set off with generous whitespace
+    # rather than competing for the same visual weight as the upload card.
+    uploaded = st.file_uploader(
+        "Upload an image or video",
+        type=sorted(s.lstrip(".") for s in IMAGE_SUFFIXES | VIDEO_SUFFIXES),
+        help="Surface/frontal or aerial imagery. Video runs through the tracker.",
+    )
 
-    with right_col:
+    st.markdown('<div style="height:32px"></div>', unsafe_allow_html=True)
+
+    status_col, info_col = st.columns(2, gap="medium")
+
+    with status_col:
         model_ready = gp.DEFAULT_WEIGHTS.exists()
         model_state = (
             '<span class="status-value ok"><span class="status-dot"></span>LOADED</span>'
@@ -1173,6 +1348,8 @@ def main() -> None:
             f'<div class="info-panel"><div class="info-panel-title">System Status</div>{rows_html}</div>',
             unsafe_allow_html=True,
         )
+
+    with info_col:
         meta_rows = [
             ("Project", APP_TITLE),
             ("Deployment", "Maritime Operations Centre"),
@@ -1185,37 +1362,31 @@ def main() -> None:
             for k, v in meta_rows
         )
         st.markdown(
-            f'<div class="info-panel" style="margin-top:.9rem">'
-            f'<div class="info-panel-title">System Information</div>{meta_html}</div>',
+            f'<div class="info-panel"><div class="info-panel-title">System Information</div>{meta_html}</div>',
             unsafe_allow_html=True,
         )
 
-    with left_col:
-        uploaded = st.file_uploader(
-            "Upload an image or video",
-            type=sorted(s.lstrip(".") for s in IMAGE_SUFFIXES | VIDEO_SUFFIXES),
-            help="Surface/frontal or aerial imagery. Video runs through the tracker.",
-        )
+    st.markdown('<div style="height:36px"></div>', unsafe_allow_html=True)
 
-        if uploaded is None:
-            if settings["stub"]:
-                st.caption("No file yet — showing the stub scene.")
-                image_view(None, ".jpg", settings, "synthetic scene")
-            else:
-                st.info("Upload an image or video to begin. Detection runs "
-                        "automatically for images.")
+    if uploaded is None:
+        if settings["stub"]:
+            st.caption("No file yet — showing the stub scene.")
+            image_view(None, ".jpg", settings, "synthetic scene")
         else:
-            suffix = Path(uploaded.name).suffix.lower()
-            payload = uploaded.getvalue()
-            if not payload:
-                st.error("That file came through empty. Try uploading it again.")
-            elif suffix in IMAGE_SUFFIXES:
-                image_view(payload, suffix, settings, uploaded.name)
-            elif suffix in VIDEO_SUFFIXES:
-                video_view(payload, suffix, settings, uploaded.name)
-            else:
-                st.error(f"**{suffix or 'That file type'}** isn't supported. Use JPG/PNG "
-                         "images or MP4/MOV/AVI video.")
+            st.info("Upload an image or video to begin. Detection runs "
+                    "automatically for images.")
+    else:
+        suffix = Path(uploaded.name).suffix.lower()
+        payload = uploaded.getvalue()
+        if not payload:
+            st.error("That file came through empty. Try uploading it again.")
+        elif suffix in IMAGE_SUFFIXES:
+            image_view(payload, suffix, settings, uploaded.name)
+        elif suffix in VIDEO_SUFFIXES:
+            video_view(payload, suffix, settings, uploaded.name)
+        else:
+            st.error(f"**{suffix or 'That file type'}** isn't supported. Use JPG/PNG "
+                     "images or MP4/MOV/AVI video.")
 
 
 main()
