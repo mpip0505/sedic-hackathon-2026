@@ -57,6 +57,27 @@ TAGLINE = (
 DEFAULT_CONF = 0.25
 DEFAULT_CONF_MILITARY = 0.25
 
+# --- Baseline picker ----------------------------------------------------------
+# Testing-only side-by-side choice between checkpoints, ahead of the uploader in
+# the sidebar. Both live side by side in models/ (gitignored — neither exists on
+# a fresh clone or in CI; the existing weights-file-missing check below degrades
+# that gracefully to an error message, not a crash). Hand-off note for whoever
+# places the files: `baseline_best.pt` is the shipped, gate-passing model;
+# `baseline2_best.pt` is the retrain candidate — see BASELINE2_NOTE below for
+# why it's not shipped. Never hardcode a third path here without updating that.
+BASELINE2_LABEL = "Baseline 2 (retrain candidate)"
+BASELINE_CHOICES: dict[str, str] = {
+    "Baseline (shipped)": str(gp.DEFAULT_WEIGHTS),
+    BASELINE2_LABEL: str(_REPO_ROOT / "models" / "baseline2_best.pt"),
+}
+CUSTOM_BASELINE_LABEL = "Custom path…"
+BASELINE2_NOTE = (
+    "Baseline 2: failed the canonical military-recall gate (metrics.py, 0.892 < "
+    "0.90) but passes the per-domain diagnostic (detail.py: aerial 0.932 / "
+    "surface 0.977 / overall 0.938) with ~27% fewer civilian-as-military false "
+    "positives — see data/DATASETS.md. Not shipped; for comparison testing only."
+)
+
 # --- Evaluation report --------------------------------------------------------
 # The landing page never hardcodes gate numbers — a stale figure in front of a
 # judge is a real cost. Parsed live from the report `src.eval.detail` writes.
@@ -1025,10 +1046,26 @@ def sidebar() -> dict:
                 value=not have_weights,
                 help="Synthetic detections — a safe fallback if weights are missing.",
             )
-            weights = st.text_input(
-                "Weights (.pt)", value=weights_default, disabled=stub,
-                help="Ignored in stub mode.",
+            baseline_label = st.selectbox(
+                "Baseline",
+                options=list(BASELINE_CHOICES) + [CUSTOM_BASELINE_LABEL],
+                disabled=stub,
+                help="Side-by-side testing between trained checkpoints. "
+                     f"{BASELINE2_NOTE}",
             )
+            if baseline_label == CUSTOM_BASELINE_LABEL:
+                weights = st.text_input(
+                    "Weights (.pt)", value=weights_default, disabled=stub,
+                    help="Ignored in stub mode.",
+                )
+            else:
+                weights = BASELINE_CHOICES[baseline_label]
+                st.markdown(
+                    f'<div class="sb-value" style="margin-bottom:.5rem"><code>{weights}</code></div>',
+                    unsafe_allow_html=True,
+                )
+                if baseline_label == BASELINE2_LABEL:
+                    st.caption(BASELINE2_NOTE)
             if not stub:
                 if Path(weights).exists():
                     st.markdown(
@@ -1036,7 +1073,8 @@ def sidebar() -> dict:
                         unsafe_allow_html=True,
                     )
                 else:
-                    st.error("Weights file not found — enable stub mode or fix the path.")
+                    st.error("Weights file not found — enable stub mode, pick "
+                              "another baseline, or fix the custom path.")
 
         st.markdown('<div class="sb-group-label">AI Operating Thresholds</div>',
                     unsafe_allow_html=True)
