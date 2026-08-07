@@ -1182,7 +1182,7 @@ def landing_page() -> None:
             unsafe_allow_html=True,
         )
 
-        left, centre, right = st.columns([1, 1.9, 1])
+        _left, centre, _right = st.columns([1, 1.9, 1])
         with centre:
             if st.button(
                 "Enter Command Centre", key="entry_launch", type="primary",
