@@ -84,6 +84,9 @@ domains:
   # frontal/surface warship imagery — the first surface-domain military source.
   # Closes the surface-military gap and seeds a surface military TEST set.
   military_surface: surface
+  # civilian_gapfill (Roboflow boats-ri7td/speedboat): mostly civilian surface
+  # small-craft, added to reduce civilian-detected-as-military false positives.
+  civilian_gapfill: surface
   # military_ships (Roboflow hanif-noer-r) uses the ShipRSImageNet 50-class
   # taxonomy and is aerial/satellite imagery — same domain as shiprsimagenet.
   military_ships: aerial
@@ -111,6 +114,39 @@ mappings:
     # Every annotated `ship` is the military detection target -> coarse military
     # class. Explicit (not "*") so any future added class isn't swept in silently.
     ship: military_vessel
+
+  civilian_gapfill:
+    # Roboflow "speedboat" (boats-ri7td) — a merge of several upstream sets whose
+    # exported data.yaml `names:` is corrupted: most entries are literal Roboflow
+    # README/export boilerplate text ingested as class names, several with real
+    # annotated boxes. Recovered actual content via source-filename prefixes
+    # (e.g. `640_640_military0707.jpg`) + visual spot-check of sampled images
+    # before mapping — do NOT trust the literal class names at face value.
+    # No "*" wildcard: every native name is listed explicitly so a future export
+    # revision can't silently sweep an unreviewed class into our taxonomy.
+    Fishing-boats: fishing_boat                                      # clean, homogeneous, verified
+    Yacht: yacht                                                     # clean, homogeneous, verified
+    speedboat: speedboat                                             # clean, homogeneous, verified
+    # filename-prefix "military0707.jpg" etc — verified: real frontal warship
+    # photos (e.g. a Royal Navy L14 hull, a naval auxiliary/RFA ship). Corrupted
+    # class name is literal export boilerplate; do not be misled by it.
+    "- annotate- and create datasets": military_vessel
+    # filename-prefix "ferry101252.jpg" etc — verified real passenger ferry.
+    "- use active learning to improve your dataset over time": passenger_ferry
+    # filename-prefix "speed001131.jpg" etc — verified real motor cruiser.
+    "- collaborate with your team on computer vision projects": speedboat
+    "-": null                                                        # cargo-prefixed (62%) mixed w/ unverified img/port/boats (38%) — too contaminated
+    "- collect - organize images": null                              # tiny boxes (sub-object, not whole vessel), mixed prefixes, tiny sample
+    "- export- train- and deploy computer vision models": null       # verified tugboats, but no tugboat class in our schema
+    "- understand and search unstructured image data": null          # verified pilot boats (ved/pat-prefixed) — ambiguous fit, dropped per team decision
+    "Roboflow is an end-to-end computer vision platform that helps you": null  # shares filenames/boxes with other fishing-boat slots — duplicate-box risk
+    "This dataset was exported via roboflow.com on January 11- 2024 at 6-42 AM GMT": null  # unclear content, tiny (65 images)
+    "all - v2 2023-05-24 7-41pm": null                                # generic stock photos, duplicate of "fishing boat - v2..." (same files/boxes)
+    "fishing boat - v2 2022-01-27 11-32pm": null                      # duplicate of "all - v2..." despite the name
+    "ship_detection - v1 2025-01-02 1-34pm": null                     # polygon/segmentation format, not HBB — out of scope
+    tugboat: null                                                     # verified real tugboats, but no tugboat class in our schema
+    undefined: null                                                   # largest bucket but literally "undefined"; duplicate-entangled with other slots
+    Human Fall: null                                                  # non-maritime entirely (human-fall-detection dataset merged in by mistake)
 
   seaships:
     # SeaShips (frontal/surface). Real Roboflow class-name strings (nc=6).

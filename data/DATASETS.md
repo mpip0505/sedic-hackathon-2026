@@ -19,30 +19,98 @@ current `data/processed/` build. Counts are real (raw folders / merge output).
 | `seaships` | surface | [`ship-detection-cedpa/seaships-spcag`](https://universe.roboflow.com/ship-detection-cedpa/seaships-spcag) | 1 | CC BY 4.0 | 6,979 | 6,979 / 9,198 | civilian + small craft (6→schema) |
 | `shiprsimagenet` | aerial | [`convertvoctoyolo/shiprsimagenet`](https://universe.roboflow.com/convertvoctoyolo/shiprsimagenet) | 39 | CC BY 4.0 (derives from academic ShipRSImageNet) | 4,579 | 4,535 / 34,299 | military + civilian (50→8 collapse) |
 | `military_surface` | **surface** | [`hannah-agkvq/military-ship-detection-qxv5m`](https://universe.roboflow.com/hannah-agkvq/military-ship-detection-qxv5m) | 2 | CC BY 4.0 | 3,011 | 3,000 / 3,713 | **military_vessel only** (single-class `ship`→military; first REAL surface-military source) |
+| `civilian_gapfill` | **surface** | [`boats-ri7td/speedboat`](https://universe.roboflow.com/boats-ri7td/speedboat) | 2 | CC BY 4.0 (declared) | 6,213 | 2,521 / 4,229 | civilian gap-fill (`fishing_boat`, `speedboat`, `yacht`, `passenger_ferry`) **+ 421 real surface `military_vessel`** recovered from a corrupted class list (see below) |
 
 _"After remap" = output of `yolo2yolo` into `data/interim/` (images with zero
 kept boxes are dropped; polygon labels enveloped to horizontal boxes). Added by
-P1, 2026-07-25; `military_surface` added 2026-07-27._
+P1, 2026-07-25; `military_surface` added 2026-07-27; `civilian_gapfill` added
+2026-08-06._
+
+### `civilian_gapfill` — corrupted class list, forensically recovered before mapping
+
+The exported `data.yaml` is **not usable at face value**: the Roboflow project
+("speedboat") is a broken merge of several upstream sets. Most of its 18
+`names:` entries are literal Roboflow README/export boilerplate text ingested
+as class names (e.g. `"- annotate- and create datasets"`), several carrying
+real annotated boxes. One entry (`Human Fall`, 245 polygon-format instances)
+is a human-fall-detection dataset that got merged in by mistake — completely
+non-maritime. Two entries (`all - v2 2023-05-24...` / `fishing boat - v2
+2022-01-27...`) are duplicate annotations of the same images under two
+different corrupted slots. One entry (`ship_detection - v1 2025-01-02...`) is
+polygon/segmentation format, not HBB.
+
+**Correction to the earlier "likely mapping" note below:** that prior pass
+(2026-08-05) treated every boilerplate-named class as pure junk to drop. It
+missed that one of those junk-named slots (`"- annotate- and create
+datasets"`, 431 boxes / 422 images) is actually a clean, homogeneous bucket of
+**real frontal-view military vessels** — recovered by tracing each class's
+underlying source filenames (e.g. `640_640_military0707.jpg`) back to their
+original per-category dataset, then visually spot-checking sampled images
+(confirmed: a Royal Navy L14 hull, a naval auxiliary/RFA ship, and others).
+Full recovered mapping lives in `configs/schema.yaml` under
+`mappings.civilian_gapfill`, with a comment on every non-obvious line.
+
+Final disposition (18 native names → schema, all explicit, no `"*"` wildcard):
+`Fishing-boats`→`fishing_boat`, `Yacht`→`yacht`, `speedboat`→`speedboat`,
+`"- annotate- and create datasets"`→`military_vessel`, `"- use active
+learning..."`→`passenger_ferry`, `"- collaborate with your team..."`→
+`speedboat`; everything else (`-`, `tugboat` [no schema class for it],
+`Human Fall`, the two duplicate stock-photo slots, the polygon-format slot,
+`undefined`, and three low-confidence/ambiguous slots incl. a pilot-boat
+class) → `null`.
 
 ### Merged split (`data/processed/`, seed 42, greedy dedup @ threshold 3)
-_Rebuilt from scratch 2026-07-28 with `military_surface` included and
-cross-domain `surface_synth` copy-paste **disabled** (real surface-military
-data now exists — see below)._
-- Collected 17,155 → **3,655 near-duplicates dropped (21.3%)** → **13,500 kept**.
-- Split: train **9,452** · val **2,699** · test **1,349**.
-- `military_vessel` (images): train 5,768 · val 1,653 · test 835 — now a mix of
-  aerial + real surface, not aerial-only.
-- `military_vessel` by domain (boxes / images):
-  | split | aerial boxes | aerial imgs | surface boxes | surface imgs |
-  |---|---:|---:|---:|---:|
-  | train | 19,058 | 3,718 | 2,541 | 2,050 |
-  | val   | 5,422  | 1,068 | 722   | 585   |
-  | test  | 2,633  | 542   | **371** | 293   |
+_Rebuilt 2026-08-06 with `civilian_gapfill` included._
+- Collected 19,676 → **3,786 near-duplicates dropped (19.2%)** → **15,890 kept**.
+- Split: train **11,125** · val **3,177** · test **1,588**.
+- `military_vessel` (images): train 6,066 · val 1,737 · test 874 — up from
+  5,768 / 1,653 / 835 (the previous build), an increase of ~421 images,
+  matching `civilian_gapfill`'s real surface-military contribution almost
+  exactly. **No military images were lost or diluted.**
+- `military_vessel` by domain (images):
+  | split | aerial | surface |
+  |---|---:|---:|
+  | train | 3,722 | 2,344 |
+  | val   | 1,067 |   670 |
+  | test  |   539 |   335 |
+  Surface military rose in **every** split (train +294, val +85, test +42 vs.
+  the previous build) — the gap-fill data landed in train AND test, not just
+  train.
+- Civilian surface classes also rose: `fishing_boat` +1,186, `speedboat` +351,
+  `passenger_ferry` +273, `yacht` +163 (all from `civilian_gapfill`). `tanker`
+  remains 0 on surface — unchanged, `civilian_gapfill` has no tanker content.
+- `python -m src.data.validate`: **PASS** — 15,890 images / 55,614 boxes
+  checked, zero schema errors, zero cross-split leakage.
 - Synthetic **surface-military** cross-domain copy-paste (`balance.py`): **0** —
-  ran with `--no-cross-domain` this build since `military_surface` supplies
-  real frontal-view military data (371 real surface-military boxes now sit in
-  TEST, unaugmented). Re-enable in `configs/train_baseline.yaml`
-  (`balance.cross_domain.enabled`) if surface recall needs a further boost.
+  still disabled; real surface-military data now covers train/val/test.
+
+> ❌ **Retrain attempt on this build (2026-08-07): FAILED the military gate, NOT
+> shipped.** 100 epochs, `yolo11m`, same `configs/train_baseline.yaml`, weights
+> preserved at `outputs/runs/baseline2/weights/best.pt` (not copied to `models/`).
+> Canonical gate (`src/eval/metrics.py`, TEST): **military recall 0.892 < 0.90 —
+> FAIL.** `models/baseline_best.pt` was restored from a pre-retrain backup
+> (MD5-verified) within the same session, so the shipped model is unaffected —
+> `outputs/eval/test_eval.md` and the README `## Results` table still describe
+> the original 2026-07-28 model (aerial 0.942 / surface 0.984 / overall 0.948
+> per `detail.py`; 0.904 per the canonical `metrics.py` gate), unchanged.
+>
+> Nuance worth recording: `src/eval/detail.py`'s per-domain breakdown (explicit
+> VOC matching at the actual `conf_military=0.10` operating point, not
+> Ultralytics' own max-F1-point matching) reads the *failed* checkpoint at
+> aerial 0.932 / surface 0.977 / **overall 0.938** — all three individually
+> clear >0.90. The two methodologies disagree on pass/fail here, not just
+> magnitude. Per this repo's own convention, `metrics.py` is authoritative, so
+> the FAIL verdict and the decision not to ship stand — but it means this
+> retrain was close, not a clear miss.
+>
+> The retrain's actual goal — fewer civilian-vessels-detected-as-`military_vessel`
+> false positives — **was achieved**: military_vessel FP count on TEST @
+> `conf_military=0.10` dropped from **965 (current/shipped model) to 708 (this
+> attempt)**, a ~27% reduction. So the false-positive fix direction is sound;
+> this attempt just gave some recall back to earn it. A future attempt might
+> recover the lost margin with fewer epochs / earlier stopping, or by
+> rebalancing so the added civilian volume doesn't shift the model's confidence
+> calibration on military as much.
 
 > ✅ **Dedup note (de-chained):** the old single-linkage clustering dropped 46%
 > (6,545), but ~78% of that was **transitive chaining** (largest cluster ≈ 2,961
@@ -57,47 +125,6 @@ data now exists — see below)._
 > ShipRSImageNet 50-class taxonomy, so both go through one collapse in
 > `configs/schema.yaml` (anchor `&shiprs50`). `military_ships` is NOT
 > all-military — it contains civilians too.
-
-## Acquired — downloaded, NOT yet integrated
-
-Fetched into `data/raw/` but **not** in `data/processed/`, **not** in
-`configs/schema.yaml` (`mappings:` / `domains:`), and **not** trained into
-`models/baseline_best.pt`. Every result and recall number in this repo is from a
-build that **excludes** this set.
-
-| Dataset (folder) | Domain | Roboflow source | Ver | Licence | Raw imgs | Fetch | Purpose |
-|---|---|---|---|---|---:|---|---|
-| `civilian_gapfill` | surface | [`boats-ri7td/speedboat`](https://universe.roboflow.com/boats-ri7td/speedboat) | 2 (generated 2025-02-20) | CC BY 4.0 (declared by the Roboflow project) | 6,213 | `python scripts/download_civilian_gapfill.py` | Close-view **civilian** surface imagery — intended to reduce civilian-vessels-detected-as-`military_vessel` false positives |
-
-**Real class list.** The Roboflow project is *named* "speedboat", but it is a merge
-of several upstream sets and the exported taxonomy is **18 class names, most of them
-junk**. Read from the Roboflow project API on 2026-08-05 (class name → annotation
-count; 10,816 boxes total):
-
-| Kind | Classes (annotation count) |
-|---|---|
-| **Vessel classes (usable)** | `Fishing-boats` 2,820 · `speedboat` 211 · `Yacht` 170 · `tugboat` 89 — **3,290 boxes (30%)** |
-| Non-vessel | `Human Fall` 245 |
-| **Junk** — Roboflow README/export boilerplate ingested as class names | `undefined` 1,619 · `ship_detection - v1 2025-01-02 1:34pm` 1,338 · `==============================` 776 · `fishing boat - v2 2022-01-27 11:32pm` 690 · `all - v2 2023-05-24 7:41pm` 544 · `Roboflow is an end-to-end computer vision platform that helps you` 466 · `* annotate, and create datasets` 431 · `* understand and search unstructured image data` 361 · `* export, train, and deploy computer vision models` 357 · `* collaborate with your team on computer vision projects` 321 · `* use active learning to improve your dataset over time` 276 · `This dataset was exported via roboflow.com on January 11, 2024 at 6:42 AM GMT` 70 · `* collect & organize images` 32 — **7,281 boxes (67%)** |
-
-**Ingest notes (LEAD, before this can be merged):**
-- The junk entries are **real boxes carrying unusable label text**, not empty
-  classes. Each must be mapped explicitly in `configs/schema.yaml` — most of them to
-  `null` (dropped) — or they poison the taxonomy. Do **not** use a `"*":` wildcard
-  here (see the 2026-07-25 decision on `military_ships`).
-- Likely mapping: `Fishing-boats` → `fishing_boat`, `speedboat` → `speedboat`,
-  `Yacht` → `yacht`, `Human Fall` → `null`. `tugboat` has no schema class — decide
-  `null` or fold into a civilian class; do not add a class to satisfy one source.
-- **No `tanker` class exists in this set**, so it does *not* close the `tanker`
-  surface gap. It does supply surface `speedboat` and `yacht` — two of the three
-  zero-surface classes.
-- Roboflow's own split (train 4,370 / valid 1,121 / test 722) is discarded as usual;
-  `merge.py` does its own stratified split.
-- `seaships` is also surface + civilian — expect dedup overlap; run the normal greedy
-  dedup and re-check `validate`'s leakage report.
-- After any retrain that includes this set, the **military recall gate must be
-  re-measured** (`src/eval/detail.py` → `outputs/eval/test_eval.md`) before any number
-  is quoted anywhere.
 
 ## Candidate / not yet integrated
 
