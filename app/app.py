@@ -125,16 +125,25 @@ def inject_css(light_mode: bool = False) -> None:
     """Inject the landing/dashboard styles for dark and light mode."""
     if light_mode:
         palette = {
-            "--g-navy": "#f4f7fa",
-            "--g-panel": "#ffffff",
-            "--g-panel-2": "#fafbfc",
-            "--g-line": "#d6dce5",
-            "--g-text": "#0f172a",
-            "--g-muted": "#475569",
-            "--g-cyan": "#2563eb",
-            "--g-green": "#15803d",
-            "--g-amber": "#b45309",
-            "--g-red": "#c62828",
+            "--g-navy": "#D5E0E7",
+            "--g-panel": "#E2E9EE",
+            "--g-panel-2": "#D9E3E9",
+            "--g-line": "#B7C8D3",
+            "--g-text": "#17324A",
+            "--g-muted": "#4F687A",
+            "--g-cyan": "#087EA4",
+            "--g-green": "#17795F",
+            "--g-amber": "#A76508",
+            "--g-red": "#C62828",
+            # Native st.info() alert. Its own dedicated trio (not reused from
+            # the general panel/line/text vars above) because its current
+            # colours — a muted slate-blue tint distinct from --g-panel/
+            # --g-text — don't correspond 1:1 to any of them; giving it its
+            # own variables lets it move to the always-present stylesheet
+            # (see inject_css's css block) without changing how it looks.
+            "--g-info-bg": "#C6DCE7",
+            "--g-info-border": "#AFC9D5",
+            "--g-info-text": "#31566B",
         }
     else:
         palette = {
@@ -148,6 +157,17 @@ def inject_css(light_mode: bool = False) -> None:
             "--g-green": "#78b69f",
             "--g-amber": "#d7a756",
             "--g-red": "#d96666",
+            # Matches the native (previously unstyled) dark-mode st.info()
+            # alert exactly, read live from its computed style: translucent
+            # blue fill, light blue text, and no visible border — border is
+            # "transparent" rather than omitted so the shared always-present
+            # rule below can apply `border:1px solid var(--g-info-border)`
+            # in both themes without a light_mode branch; the alert's
+            # box-sizing:border-box means that 1px doesn't change its
+            # outer size, and transparent keeps it invisible here.
+            "--g-info-bg": "rgba(61,157,243,0.2)",
+            "--g-info-border": "transparent",
+            "--g-info-text": "#C7EBFF",
         }
 
     # Light mode is a deliberately separate design, not an inverted dark theme:
@@ -162,30 +182,30 @@ def inject_css(light_mode: bool = False) -> None:
               .info-panel, .brief-panel, .eval-pending, .taxonomy-card,
               .provenance-wrap, .guardian-header, .mil-recall-card {
                 border-radius:8px;
-                box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+                box-shadow:0 1px 2px rgba(16,42,67,.06), 0 1px 3px rgba(16,42,67,.05);
               }
               .chip-row, .metric-grid.secondary {
                 border-radius:8px; overflow:hidden;
-                box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+                box-shadow:0 1px 2px rgba(16,42,67,.06), 0 1px 3px rgba(16,42,67,.05);
               }
               .table-wrap {
                 border-radius:8px;
-                box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+                box-shadow:0 1px 2px rgba(16,42,67,.06), 0 1px 3px rgba(16,42,67,.05);
               }
               .entry-intro {
-                background:#eef3fb; border:1px solid var(--g-line);
+                background:#DCE7EC; border:1px solid var(--g-line);
                 border-left:3px solid var(--g-cyan);
                 border-radius:8px; padding:1.3rem 1.5rem;
-                box-shadow:0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.05);
+                box-shadow:0 1px 2px rgba(16,42,67,.06), 0 1px 3px rgba(16,42,67,.05);
               }
               .mil-recall-card {
-                background:#fef2f2; border-left-width:4px;
+                background:#E8D6D7; border-left-width:4px;
               }
               .status-value.ok, .status-value.warn, .status-value.neutral {
                 color:var(--g-muted);
               }
               .sedic-badge {
-                background:#eff6ff; border:1px solid #dce7f5; border-radius:4px;
+                background:#DCE7EC; border:1px solid var(--g-line);
               }
               .sedic-badge::before {
                 content:""; display:inline-block; width:6px; height:6px;
@@ -193,15 +213,234 @@ def inject_css(light_mode: bool = False) -> None:
                 vertical-align:middle;
               }
               [class*="st-key-entry_launch"] button[kind="primary"] {
-                background:#1f4d3a !important; border:1px solid #3f7a61 !important;
-                border-radius:10px !important; box-shadow:0 1px 2px rgba(15,23,42,.12);
+                background:#176B55 !important; border:1px solid #3F8B76 !important;
+                border-radius:10px !important; box-shadow:0 1px 2px rgba(16,42,67,.12);
               }
               [class*="st-key-entry_launch"] button[kind="primary"]::after {
                 color:#fff;
               }
               [class*="st-key-entry_launch"] button[kind="primary"]:hover {
-                background:#2c6e50 !important; border-color:#4f8f70 !important;
-                filter:none !important; box-shadow:0 4px 14px rgba(15,23,42,.2);
+                background:#1E8267 !important; border-color:#4FA189 !important;
+                filter:none !important; box-shadow:0 4px 14px rgba(16,42,67,.18);
+              }
+              /* Operational Briefing modal: a soft blue-grey rather than the
+                 near-white dashboard panel colour, with cards a touch
+                 lighter than the modal itself (var(--g-panel), already
+                 lighter than this) so they stay visually separated, and a
+                 gentle navy-tinted backdrop instead of the dark theme's
+                 near-black dim/blur (which would otherwise turn muddy-grey
+                 over light content). */
+              body:has([data-testid="stDialog"]) [data-testid="stAppViewContainer"] {
+                filter:blur(5px) brightness(.94) !important;
+              }
+              [data-testid="stDialog"] {
+                background:rgba(16,42,67,.16) !important;
+              }
+              [data-testid="stDialog"] [role="dialog"] {
+                background:#DDE7EC !important;
+                box-shadow:0 10px 32px rgba(16,42,67,.16) !important;
+              }
+              /* Cards inside the modal a touch lighter than the modal itself
+                 so they stay visually separated (modal #DDE7EC, cards
+                 #E5ECEF) — these classes reuse var(--g-panel) via the base
+                 stylesheet, so give them their own explicit tone here. */
+              [data-testid="stDialog"] .brief-panel,
+              [data-testid="stDialog"] .info-panel,
+              [data-testid="stDialog"] .mil-recall-card,
+              [data-testid="stDialog"] .taxonomy-card,
+              [data-testid="stDialog"] .eval-pending {
+                background:#E5ECEF !important; border-color:#B7C8D3 !important;
+              }
+              [data-testid="stDialog"] .mil-recall-card {
+                background:#E9DBDC !important;
+              }
+
+              /* --------------------------------------------------------------
+                 Native Streamlit / BaseWeb component coverage.
+                 .streamlit/config.toml pins base="dark" with hardcoded hex
+                 colours (backgroundColor/secondaryBackgroundColor/textColor) —
+                 that's a static, server-start-time theme with no per-session
+                 switch, and it seeds these components directly rather than
+                 through our --g-* variables. So toggling light_mode alone
+                 never touched the sidebar chrome, selects, inputs, slider,
+                 uploader or secondary buttons — this block hardcodes light
+                 equivalents for each, scoped to light_mode so dark mode
+                 (still fully served by config.toml) is untouched. Selectors
+                 use data-testid/data-baseweb, not emotion-cache hash classes,
+                 since only the former are stable across Streamlit builds.
+                 -------------------------------------------------------------- */
+              [data-testid="stSidebar"] {
+                background:#C8D5DF !important; color:#17324A !important;
+                border-right:1px solid #B7C8D3 !important;
+              }
+              [data-testid="stSidebar"] * {
+                color:#17324A !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p,
+              [data-testid="stSidebar"] .sb-label, [data-testid="stSidebar"] .sb-group-label,
+              [data-testid="stSidebar"] .sb-desc, [data-testid="stSidebar"] .sb-value {
+                color:var(--g-muted) !important;
+              }
+              /* Sidebar's own bordered cards (Models / Thresholds / Video)
+                 read var(--g-panel) from the shared stylesheet — give them
+                 their own slightly-darker-than-main-panel tone here so the
+                 sidebar → cards step stays visible even though the sidebar
+                 itself is now darker than the page background. */
+              [data-testid="stSidebar"] [class*="st-key-sb_card_"] {
+                background:#E0E8ED !important; border-color:#B7C8D3 !important;
+              }
+              [class*="st-key-sidebar_briefing"] button[kind="secondary"] {
+                background:#E0E8ED !important; border-color:#B7C8D3 !important;
+              }
+              /* Selectbox fill/border/text and the file-uploader dropzone's
+                 fill/border moved to the always-present stylesheet (see
+                 near the top of the f-string css block below) so they're
+                 driven by --g-* variables instead of being conditionally
+                 injected — see that block's comment for why. */
+              /* Text input / number input */
+              [data-testid="stSidebar"] [data-baseweb="input"] {
+                background:#E6EDF1 !important; border-color:#B7C8D3 !important;
+              }
+              [data-testid="stSidebar"] [data-baseweb="input"] input {
+                background:#E6EDF1 !important; color:#17324A !important;
+                -webkit-text-fill-color:#17324A !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+                background:#E6EDF1 !important; color:#17324A !important;
+                border-color:#B7C8D3 !important;
+              }
+              /* Slider: unfilled rail, filled rail, thumb. :not([data-testid])
+                 excludes the tick-bar min/max labels and the value bubble,
+                 which sit at this same ">div>div" depth and were otherwise
+                 getting painted with the rail's slate background too. */
+              [data-testid="stSidebar"] [data-baseweb="slider"] [role="slider"] {
+                background:#087EA4 !important;
+              }
+              [data-testid="stSidebar"] [data-baseweb="slider"] > div > div:not([data-testid]) {
+                background:#B7C8D3 !important;
+              }
+              [data-testid="stSidebar"] [data-baseweb="slider"] > div > div > div:not([data-testid]) {
+                background:#087EA4 !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stSliderThumbValue"],
+              [data-testid="stSidebar"] [data-testid="stSliderTickBarMin"],
+              [data-testid="stSidebar"] [data-testid="stSliderTickBarMax"] {
+                background:transparent !important; box-shadow:none !important;
+                border:none !important; color:#17324A !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stSliderThumbValue"] {
+                color:#087EA4 !important;
+              }
+              /* Toggle / checkbox track */
+              [data-testid="stSidebar"] [data-baseweb="checkbox"] > div:first-child {
+                background:#B7C8D3 !important;
+              }
+              [data-testid="stSidebar"] [data-baseweb="checkbox"]:has(input:checked) > div:first-child {
+                background:#087EA4 !important;
+              }
+              /* Main-content toggle (e.g. "Show original (before / after)").
+                 Same track colours as the sidebar toggle above, just scoped
+                 to stMain instead of stSidebar so the sidebar's own toggle
+                 (and its rule above) is untouched — without a stMain scope,
+                 the unstyled OFF track defaults to a near-white BaseWeb
+                 grey that reads as too bright against the light panel. */
+              [data-testid="stMain"] [data-baseweb="checkbox"] > div:first-child {
+                background:#B7C8D3 !important;
+              }
+              [data-testid="stMain"] [data-baseweb="checkbox"]:has(input:checked) > div:first-child {
+                background:#087EA4 !important;
+              }
+              /* Disabled controls keep readable contrast instead of fading
+                 to near-invisible grey-on-grey. */
+              [data-testid="stSidebar"] input:disabled,
+              [data-testid="stSidebar"] [aria-disabled="true"] {
+                background:#D9E3E9 !important; color:#4F687A !important;
+                border-color:#B7C8D3 !important; -webkit-text-fill-color:#4F687A !important;
+              }
+              /* File uploader dropzone (main content). Fill/border moved to
+                 the always-present stylesheet (see near the top of the
+                 f-string css block below) — this bespoke icon/text tint has
+                 no clean existing --g-* match (it's deliberately a touch
+                 darker than --g-muted for legibility on the light panel),
+                 and unlike a plain var() swap, hardcoding it unconditionally
+                 would leave near-invisible dark teal text on the DARK theme's
+                 own dark panel, so it stays conditional here. */
+              [data-testid="stFileUploaderDropzone"] {
+                color:#31566B !important;
+              }
+              [data-testid="stFileUploaderDropzone"] svg {
+                fill:#31566B !important; color:#31566B !important;
+              }
+              [data-testid="stFileUploaderDropzone"] small,
+              [data-testid="stFileUploaderDropzone"] span,
+              [data-testid="stFileUploaderDropzone"] div {
+                color:#31566B !important;
+              }
+              [data-testid="stFileUploaderDropzone"] button {
+                background:#E6EDF1 !important; border:1px solid #AFC1CC !important;
+                color:#17324A !important;
+              }
+              /* Native st.info() banner ("Upload an image or video to
+                 begin...") moved to the always-present stylesheet (see near
+                 the top of the f-string css block below) so it's driven by
+                 --g-info-* variables instead of being conditionally
+                 injected. */
+              /* Secondary buttons app-wide (Browse files, Run detection,
+                 Download CSV, ...) — the primary CTA keeps its own dark
+                 green rule above and is untouched by this. */
+              button[kind="secondary"] {
+                background:#E6EDF1 !important; border:1px solid #AFC1CC !important;
+                color:#17324A !important;
+              }
+              button[kind="secondary"] p, button[kind="secondary"] span {
+                color:#17324A !important;
+              }
+              button[kind="secondary"]:hover {
+                background:#D9E3E9 !important; border-color:#087EA4 !important;
+                color:#087EA4 !important;
+              }
+              [data-testid="stTooltipIcon"] {
+                color:#526B7A !important;
+              }
+              /* The icon's <svg> carries a hardcoded stroke colour from the
+                 dark base theme (not currentColor), so overriding just the
+                 parent's `color` above never reached it — stroke needs its
+                 own explicit override. */
+              [data-testid="stTooltipIcon"] svg {
+                stroke:#526B7A !important; color:#526B7A !important;
+              }
+              /* li covers captions whose text starts with "*" (e.g. the
+                 dataset-provenance attribution note) — Streamlit's markdown
+                 parser renders those as a <ul><li>, not a <p>, so the rule
+                 above alone never matched them and they stayed on the
+                 dark theme's near-white text colour. */
+              [data-testid="stCaptionContainer"] p,
+              [data-testid="stCaptionContainer"] li {
+                color:var(--g-muted) !important;
+              }
+              /* Resolved-path display in the sidebar (Weights (.pt) path).
+                 It's an app-authored <code> inside .sb-value, not a
+                 stTextInput, but it still inherits Streamlit markdown's
+                 dark-theme <code> background, so it needs its own rule. */
+              [data-testid="stSidebar"] .sb-value code {
+                background:#E6EDF1 !important; color:#17324A !important;
+                border:1px solid #B7C8D3 !important;
+              }
+              /* st.metric() and native headings/subheaders (st.subheader())
+                 inherit Streamlit's dark base theme text colour directly,
+                 same as the other native components above — not covered by
+                 the app's own .metric-* / var(--g-text) rules since those
+                 only style the hand-rolled HTML metric cards, not st.metric
+                 itself. */
+              [data-testid="stMetricLabel"] {
+                color:var(--g-muted) !important;
+              }
+              [data-testid="stMetricValue"] {
+                color:var(--g-text) !important;
+              }
+              h1, h2, h3, h4, h5, h6,
+              [data-testid="stHeading"] {
+                color:var(--g-text) !important;
               }
         """
 
@@ -218,8 +457,90 @@ def inject_css(light_mode: bool = False) -> None:
         --g-green:{palette['--g-green']};
         --g-amber:{palette['--g-amber']};
         --g-red:{palette['--g-red']};
+        --g-info-bg:{palette['--g-info-bg']};
+        --g-info-border:{palette['--g-info-border']};
+        --g-info-text:{palette['--g-info-text']};
       }}
       .stApp {{ background:var(--g-navy); color:var(--g-text); }}
+      /* Native Streamlit/BaseWeb selectbox + file-uploader dropzone fill.
+         Always present (NOT inside light_only_css / the light_mode branch)
+         and driven entirely by the --g-* custom properties above: when
+         :root's values change on a theme toggle, the browser recomputes
+         every var() reference here immediately as part of the same style
+         recalc — there's no gap where this markup is absent from the page
+         waiting on a script rerun to inject it, which is what caused the
+         brief stale-colour flash before. transition:none stops BaseWeb's
+         own colour-change animation from adding a visible cross-fade on
+         top of that swap. */
+      [data-testid="stSidebar"] [data-baseweb="select"][data-baseweb="select"],
+      [data-testid="stSidebar"] [data-baseweb="select"][data-baseweb="select"] * {{
+        background-color:var(--g-panel) !important; border-color:var(--g-line) !important;
+        color:var(--g-text) !important; transition:none !important;
+      }}
+      [data-testid="stSidebar"] .st-bc {{
+        background-color:var(--g-panel) !important; transition:none !important;
+      }}
+      [data-testid="stSidebar"] [data-baseweb="select"] svg {{
+        fill:var(--g-muted) !important;
+      }}
+      [data-testid="stSidebar"] [data-baseweb="popover"] {{
+        background:var(--g-panel) !important;
+      }}
+      [data-baseweb="menu"] {{
+        background:var(--g-panel) !important;
+      }}
+      [data-baseweb="menu"] li, [data-baseweb="menu"] li * {{
+        color:var(--g-text) !important;
+      }}
+      [data-baseweb="menu"] li:hover {{
+        background:var(--g-panel-2) !important;
+      }}
+      /* Selectbox dropdown menu (Baseline, Tracker, ...). BaseWeb renders
+         this list in a portal appended to <body>, OUTSIDE
+         [data-testid="stSidebar"] entirely, so it needs its own unscoped
+         rule rather than inheriting from the sidebar-scoped ones above.
+         stSelectboxVirtualDropdown is a generic testid shared by every
+         selectbox on the page, so this covers all of them, not just one. */
+      [data-testid="stSelectboxVirtualDropdown"] {{
+        background:var(--g-panel) !important; border:1px solid var(--g-line) !important;
+      }}
+      [data-testid="stSelectboxVirtualDropdown"] li[role="option"] {{
+        background:var(--g-panel) !important; color:var(--g-text) !important;
+      }}
+      [data-testid="stSelectboxVirtualDropdown"] li[role="option"] * {{
+        color:var(--g-text) !important;
+      }}
+      [data-testid="stSelectboxVirtualDropdown"] li[role="option"]:hover,
+      [data-testid="stSelectboxVirtualDropdown"] li[aria-selected="true"] {{
+        background:var(--g-panel-2) !important;
+      }}
+      [data-testid="stFileUploaderDropzone"] {{
+        background:var(--g-panel) !important; border:1px solid var(--g-line) !important;
+        transition:none !important;
+      }}
+      /* Native st.info() alert ("Upload an image or video to begin...").
+         --g-info-bg/border/text are its own dedicated variables (defined
+         alongside the rest of the palette in inject_css), not reused from
+         --g-panel/--g-line/--g-text, since its current colours don't match
+         those 1:1 in either theme. border-width stays 1px in both themes —
+         dark's --g-info-border is "transparent" rather than the rule
+         omitting a border, so this stays a single always-present
+         declaration with no light_mode branch; the alert's own
+         box-sizing:border-box means that 1px doesn't shift its size. */
+      [data-testid="stAlertContainer"][data-testid="stAlertContainer"] {{
+        background-color:var(--g-info-bg) !important;
+        border:1px solid var(--g-info-border) !important;
+        color:var(--g-info-text) !important;
+        transition:none !important;
+      }}
+      [data-testid="stAlertContainer"][data-testid="stAlertContainer"] * {{
+        color:var(--g-info-text) !important;
+        transition:none !important;
+      }}
+      [data-testid="stAlertContainer"][data-testid="stAlertContainer"] svg {{
+        fill:var(--g-info-text) !important;
+        transition:none !important;
+      }}
       [data-testid="stWidgetLabel"] p, [data-testid="stCheckbox"] p,
       [data-testid="stToggle"] p, [data-testid="stCaptionContainer"] p {{
         color:var(--g-text) !important;
@@ -1010,11 +1331,17 @@ def _sb_gap(px: int = 40) -> None:
 
 def sidebar() -> dict:
     with st.sidebar:
-        # The briefing modal (when shown) renders its own copy of this same
-        # `key="guardian_light"` toggle — Streamlit forbids two widgets with
-        # the same key in one run, so this one only appears once dismissed.
+        # The briefing modal (when shown) renders its own separate copy of
+        # this toggle — see landing_page(). Both write through to the single
+        # canonical st.session_state["guardian_light"]; see _theme_from_sidebar
+        # / _theme_from_modal for why they can't just share one widget key.
         if st.session_state["guardian_briefed"]:
-            st.toggle("Light Interface", key="guardian_light")
+            st.session_state["guardian_light_sidebar"] = st.session_state["guardian_light"]
+            st.toggle(
+                "Light Interface",
+                key="guardian_light_sidebar",
+                on_change=_theme_from_sidebar,
+            )
             st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="sb-label">Mission</div>', unsafe_allow_html=True)
@@ -1141,6 +1468,64 @@ def _dismiss_briefing() -> None:
     st.rerun()
 
 
+def _theme_from_sidebar() -> None:
+    """on_change callback for the sidebar's copy of the theme toggle.
+
+    Writes the widget's own key (guardian_light_sidebar) through to the
+    single canonical guardian_light — nothing outside this function ever
+    reads guardian_light_sidebar for anything but driving this one
+    widget. No explicit st.rerun(): this toggle is never rendered inside
+    a fragment (the sidebar isn't one), so Streamlit's normal post-
+    callback rerun is already a full app rerun. Calling st.rerun() here
+    anyway would do nothing but render Streamlit's own "Calling
+    st.rerun() within a callback is a no-op." warning banner — see
+    _theme_from_modal for why that happens.
+    """
+    st.session_state["guardian_light"] = st.session_state["guardian_light_sidebar"]
+
+
+def _theme_from_modal() -> None:
+    """on_change callback for the Operational Briefing modal's copy of
+    the theme toggle.
+
+    Writes guardian_light_modal through to the canonical guardian_light,
+    same as _theme_from_sidebar — but this toggle lives inside
+    st.dialog, which wraps its body in a fragment (see
+    dialog_decorator.py: non_optional_func runs inside _fragment(...)).
+    So the rerun already queued for this widget's change is fragment-
+    scoped, and that scope is decided by the frontend before this
+    callback even runs server-side (Streamlit invokes on_change from
+    SessionState.on_script_will_rerun(), which fires *before* the
+    pending rerun starts). Calling st.rerun() in this callback would
+    raise RerunException, which Streamlit silently swallows into a
+    "Calling st.rerun() within a callback is a no-op." warning banner —
+    verified live: the fragment-scoped rerun proceeds unchanged and
+    inject_css() (called only from main(), outside the fragment) never
+    re-runs, so the dashboard behind the modal stays on the old theme.
+    Instead this only sets a flag; _flush_theme_rerun(), called from
+    plain script flow at the top of the dialog's fragment body, issues
+    the actual st.rerun(scope="app") from a place where it's a live
+    request, not a no-op.
+    """
+    st.session_state["guardian_light"] = st.session_state["guardian_light_modal"]
+    st.session_state["_guardian_theme_dirty"] = True
+
+
+def _flush_theme_rerun() -> None:
+    """Escalate a pending theme change (flagged by _theme_from_modal) to
+    a full-app rerun.
+
+    Must be called from inside the dialog's fragment body (not from a
+    callback — see _theme_from_modal for why a callback can't do this).
+    Called at the top of show_operational_briefing(), before any widget
+    renders, so a stale fragment-scoped run is abandoned in favour of a
+    full main() rerun that re-executes inject_css() and repaints the
+    whole app — dashboard, sidebar and modal — in one shot.
+    """
+    if st.session_state.pop("_guardian_theme_dirty", False):
+        st.rerun(scope="app")
+
+
 def _show_logo(path: Path, slot, width: int) -> None:
     """Render acknowledgement assets at a deliberate, compact display size."""
     slot.container(key=f"ack_logo_{path.stem.replace('-', '_')}").image(str(path), width=width)
@@ -1161,7 +1546,12 @@ def landing_page() -> None:
             st.markdown('<div class="sedic-badge">SEDIC 2026 · Visual Track</div>',
                         unsafe_allow_html=True)
         with top[2]:
-            st.toggle("Light Interface", key="guardian_light")
+            st.session_state["guardian_light_modal"] = st.session_state["guardian_light"]
+            st.toggle(
+                "Light Interface",
+                key="guardian_light_modal",
+                on_change=_theme_from_modal,
+            )
     hero_col, status_col = st.columns((1.7, 1), gap="large")
     with hero_col:
         st.markdown(
@@ -1324,6 +1714,13 @@ def show_operational_briefing() -> None:
     dismissal only happens through the "Enter Command Centre" button below,
     which does set the flag.
     """
+    # This function's body is the dialog's fragment (see
+    # _dialog_decorator: it wraps non_optional_func in _fragment(...)).
+    # Escalating here, before any widgets render, means a theme change
+    # made via the toggle inside landing_page() below abandons this
+    # fragment-scoped run in favour of a full main() rerun that repaints
+    # the whole app — see _theme_from_modal / _flush_theme_rerun.
+    _flush_theme_rerun()
     landing_page()
 
 
@@ -1333,8 +1730,24 @@ def show_operational_briefing() -> None:
 def main() -> None:
     if "guardian_briefed" not in st.session_state:
         st.session_state["guardian_briefed"] = False
+    # guardian_light is the ONLY canonical theme value. guardian_light_sidebar
+    # and guardian_light_modal are separate per-widget keys that exist solely
+    # to back the sidebar's and modal's own st.toggle instances — each is
+    # synced from guardian_light immediately before its widget renders (see
+    # sidebar() / landing_page()), and each writes back to guardian_light via
+    # its own on_change callback (_theme_from_sidebar / _theme_from_modal).
+    # They must stay separate: the sidebar and modal toggles are two distinct
+    # widgets rendered in mutually-exclusive branches (based on
+    # guardian_briefed) and, for the modal, across a fragment boundary
+    # (st.dialog) — sharing one widget key across two physically different
+    # widget instances like that is what caused the toggle to silently reset
+    # or desync.
     if "guardian_light" not in st.session_state:
         st.session_state["guardian_light"] = False
+    if "guardian_light_sidebar" not in st.session_state:
+        st.session_state["guardian_light_sidebar"] = False
+    if "guardian_light_modal" not in st.session_state:
+        st.session_state["guardian_light_modal"] = False
     inject_css(st.session_state["guardian_light"])
 
     # The upload dashboard is always the home screen now; the landing page
