@@ -144,6 +144,15 @@ def inject_css(light_mode: bool = False) -> None:
             "--g-info-bg": "#C6DCE7",
             "--g-info-border": "#AFC9D5",
             "--g-info-text": "#31566B",
+            # Military Recall performance card: its own dedicated trio (not
+            # var(--g-panel)/var(--g-red)) so it reads as a highlighted
+            # metric rather than an alert, in both themes. Values match what
+            # the modal-scoped light-mode override already forces exactly,
+            # so switching the base .mil-recall-card/.mil-recall-label
+            # rules (below) to these produces zero visual change here.
+            "--g-mil-bg": "#DCEAF0",
+            "--g-mil-accent": "#0B8FB3",
+            "--g-mil-label": "#087EA4",
         }
     else:
         palette = {
@@ -168,6 +177,12 @@ def inject_css(light_mode: bool = False) -> None:
             "--g-info-bg": "rgba(61,157,243,0.2)",
             "--g-info-border": "transparent",
             "--g-info-text": "#C7EBFF",
+            # Military Recall performance card: deep blue/cyan highlight,
+            # matching the light-mode treatment's design philosophy instead
+            # of the plain var(--g-panel)/var(--g-red) it used before.
+            "--g-mil-bg": "#102A3A",
+            "--g-mil-accent": "#19A7C9",
+            "--g-mil-label": "#39B9D8",
         }
 
     # Light mode is a deliberately separate design, not an inverted dark theme:
@@ -243,16 +258,32 @@ def inject_css(light_mode: bool = False) -> None:
               /* Cards inside the modal a touch lighter than the modal itself
                  so they stay visually separated (modal #DDE7EC, cards
                  #E5ECEF) — these classes reuse var(--g-panel) via the base
-                 stylesheet, so give them their own explicit tone here. */
+                 stylesheet, so give them their own explicit tone here.
+                 Military Recall is deliberately NOT in this shared group —
+                 it gets its own distinct cool-cyan tint below so it reads as
+                 a highlighted metric rather than a plain neutral card like
+                 its siblings. */
               [data-testid="stDialog"] .brief-panel,
               [data-testid="stDialog"] .info-panel,
-              [data-testid="stDialog"] .mil-recall-card,
               [data-testid="stDialog"] .taxonomy-card,
               [data-testid="stDialog"] .eval-pending {
                 background:#E5ECEF !important; border-color:#B7C8D3 !important;
               }
+              /* Military Recall card: a highlighted metric, not an alert —
+                 no red/pink/orange/yellow/purple/green background. Subtle
+                 cool-blue tint (#DCEAF0) instead of the neutral #E5ECEF its
+                 siblings use above, with a deeper cyan left accent
+                 (#0B8FB3) distinct from --g-cyan so it reads as its own
+                 premium accent rather than reusing the standard cyan used
+                 elsewhere. The base .mil-recall-card/.mil-recall-label
+                 rules still use var(--g-red) for the left border and label
+                 (dark mode is untouched by this light-mode-only block). */
               [data-testid="stDialog"] .mil-recall-card {
-                background:#E9DBDC !important;
+                background:#DCEAF0 !important; border-color:#B7C8D3 !important;
+                border-left-color:#0B8FB3 !important;
+              }
+              [data-testid="stDialog"] .mil-recall-label {
+                color:#087EA4 !important;
               }
 
               /* --------------------------------------------------------------
@@ -308,6 +339,17 @@ def inject_css(light_mode: bool = False) -> None:
               [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
                 background:#E6EDF1 !important; color:#17324A !important;
                 border-color:#B7C8D3 !important;
+                transition:background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"]:hover,
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"]:hover {
+                background:#D0DEE6 !important; color:#17324A !important;
+                box-shadow:0 1px 4px rgba(16,42,67,.12) !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"]:active,
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"]:active {
+                background:#C3D4DE !important;
+                box-shadow:inset 0 1px 2px rgba(16,42,67,.18) !important;
               }
               /* Slider: unfilled rail, filled rail, thumb. :not([data-testid])
                  excludes the tick-bar min/max labels and the value bubble,
@@ -442,6 +484,120 @@ def inject_css(light_mode: bool = False) -> None:
               [data-testid="stHeading"] {
                 color:var(--g-text) !important;
               }
+              /* Uploaded-file row (filename + size) and the st.image()
+                 caption — same native-component gap as their dark_only_css
+                 counterparts (stFileUploaderDropzone only covers the empty
+                 dropzone, not this row; .stFileUploaderFileData is the
+                 stable, literal Streamlit class name wrapping filename+size,
+                 verified against Streamlit's own frontend source). Light
+                 mode had no override for these at all, so they were
+                 inheriting the dark base theme's near-white text directly. */
+              [data-testid="stFileUploaderFileName"] {
+                color:#17324A !important;
+                -webkit-text-fill-color:#17324A !important;
+                opacity:1 !important;
+              }
+              .stFileUploaderFileData > *:not([data-testid="stFileUploaderFileName"]) {
+                color:#4F687A !important;
+                -webkit-text-fill-color:#4F687A !important;
+                opacity:1 !important;
+              }
+              [data-testid="stImageCaption"],
+              [data-testid="stImageCaption"] p,
+              [data-testid="stImageCaption"] span,
+              [data-testid="stImageCaption"] div {
+                color:#4F687A !important;
+                -webkit-text-fill-color:#4F687A !important;
+                opacity:1 !important;
+              }
+        """
+
+    # Dark-mode-only counterpart to light_only_css, for the rare case where
+    # dark mode (not light) needs a targeted fix and light mode's existing
+    # native/default rendering must stay untouched — i.e. there's no
+    # existing light-mode override here to safely fall back on, unlike the
+    # --g-mil-*/--g-info-* variables above.
+    dark_only_css = ""
+    if not light_mode:
+        dark_only_css = """
+              /* st.image()'s caption ("synthetic scene — detections")
+                 inherits Streamlit's dark base theme's caption styling
+                 (small, light text at reduced opacity) directly from
+                 config.toml, same root cause as the other native-component
+                 fixes above — it's just that light mode already renders
+                 acceptably off Streamlit's own default here (confirmed via
+                 no existing override), so this stays dark-only rather than
+                 an always-present rule that would also repaint light mode. */
+              [data-testid="stImageCaption"] {
+                color:#8FA9BA !important; opacity:1 !important;
+                -webkit-text-fill-color:#8FA9BA !important;
+              }
+              /* Uploaded-file row (filename + size) is a distinct element
+                 from the dropzone — [data-testid="stFileUploaderDropzone"]
+                 only covers the empty/idle drop area, not this row, so it
+                 never reached these two. Verified against Streamlit's own
+                 frontend source (streamlit/static/static/js/5281.*.chunk.js):
+                 the filename has a real, stable testid; the size text next
+                 to it (e.g. "1.0MB") does not — it's rendered by an
+                 internal component with only an auto-generated emotion
+                 class, so the only stable hook for it is structural: it's
+                 the sibling of the filename inside .stFileUploaderFileData,
+                 which IS a stable, literal Streamlit class name (not an
+                 emotion-cache hash). */
+              [data-testid="stFileUploaderFileName"] {
+                color:#8FA9BA !important; opacity:1 !important;
+                -webkit-text-fill-color:#8FA9BA !important;
+              }
+              .stFileUploaderFileData > *:not([data-testid="stFileUploaderFileName"]) {
+                color:#8FA9BA !important; opacity:1 !important;
+                -webkit-text-fill-color:#8FA9BA !important;
+              }
+              /* "Max frames" number input. Its own light_only_css
+                 counterpart (above, "Text input / number input") never
+                 touched [data-testid="stNumberInputContainer"] — only the
+                 input fill and step buttons — so dark mode fell all the way
+                 through to Streamlit's native dark theme here, which is
+                 what's broken: verified live that the container's own
+                 native border colour (rgb(18,33,53)) is nearly identical to
+                 the dark sidebar background behind it, reading as "no
+                 border", while the step-button wrapper (a sibling of
+                 [data-baseweb="input"] inside the same container) keeps its
+                 own separate native background — the "floating black box".
+                 overflow:hidden on the container itself, rather than
+                 fighting each child's own corner radii, is what makes the
+                 whole thing read as one unified rounded rectangle. */
+              [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] {
+                border:1px solid #29465C !important; border-radius:10px !important;
+                overflow:hidden !important; background:#0B1828 !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] [data-baseweb="input"] {
+                background:#0B1828 !important; border:none !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputField"] {
+                color:#E6EEF5 !important; -webkit-text-fill-color:#E6EEF5 !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputContainer"] > div:not([data-baseweb="input"]) {
+                background:#0B1828 !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"],
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"] {
+                background:#0B1828 !important; border:none !important; color:#E6EEF5 !important;
+                transition:background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"] svg,
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"] svg {
+                fill:currentColor !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"]:hover,
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"]:hover {
+                background:#1B3852 !important; color:#F0F6FA !important;
+                box-shadow:0 0 0 1px rgba(74,180,220,.15), 0 2px 6px rgba(0,0,0,.25) !important;
+              }
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"]:active,
+              [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"]:active {
+                background:#142A3E !important;
+                box-shadow:inset 0 1px 2px rgba(0,0,0,.25) !important;
+              }
         """
 
     css = f"""
@@ -460,6 +616,9 @@ def inject_css(light_mode: bool = False) -> None:
         --g-info-bg:{palette['--g-info-bg']};
         --g-info-border:{palette['--g-info-border']};
         --g-info-text:{palette['--g-info-text']};
+        --g-mil-bg:{palette['--g-mil-bg']};
+        --g-mil-accent:{palette['--g-mil-accent']};
+        --g-mil-label:{palette['--g-mil-label']};
       }}
       .stApp {{ background:var(--g-navy); color:var(--g-text); }}
       /* Native Streamlit/BaseWeb selectbox + file-uploader dropzone fill.
@@ -594,7 +753,28 @@ def inject_css(light_mode: bool = False) -> None:
       [class*="st-key-topbar"] [data-testid="stToggle"] {{ display:flex; justify-content:flex-end; }}
       .entry-brand {{ color:var(--g-text); font-weight:700; font-size:.86rem; letter-spacing:.13em; }}
       .entry-brand span {{ color:var(--g-cyan); font-weight:500; }}
-      .sedic-badge {{ border:1px solid var(--g-line); color:var(--g-text); padding:.32rem .55rem; font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; position:relative; top:-8px; }}
+      .sedic-badge {{
+        display:flex; align-items:center;
+        border:1px solid var(--g-line); color:var(--g-text); padding:.32rem .55rem;
+        font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap;
+        position:relative; top:-8px;
+      }}
+      /* Status dot before "SEDIC 2026 · Visual Track". display:flex +
+         align-items:center on .sedic-badge above makes the dot and the text
+         two flex items sharing one vertical center — not vertical-align
+         guesswork against text-line metrics, which is what left the dot
+         visibly off-center from the text before. Structure (size, gap)
+         lives here so both themes share it; the
+         colour is dark mode's own — light_only_css's own .sedic-badge::before
+         rule (same selector, later in the stylesheet so it wins the
+         cascade tie) still fully overrides this back to var(--g-cyan) in
+         light mode, unchanged. Dark mode has no such override, so this
+         rule is what actually paints its dot. */
+      .sedic-badge::before {{
+        content:""; display:inline-block; width:6px; height:6px;
+        border-radius:50%; background:#19A7C9; margin-right:.45rem;
+        vertical-align:middle;
+      }}
       .entry-intro {{ padding:0 0 .85rem; border-bottom:1px solid var(--g-line); }}
       .section-label {{ color:var(--g-cyan); font-size:.67rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }}
       .entry-intro h1 {{ color:var(--g-text); margin:.35rem 0 .55rem; font-size:2.75rem; font-weight:600; letter-spacing:0; line-height:1.15; }}
@@ -628,8 +808,8 @@ def inject_css(light_mode: bool = False) -> None:
          this panel already and safe to scale directly. */
       .eval-section .section-label {{ font-size:.8rem; }}
       .entry-section.eval-section h2 {{ font-size:1.3rem; }}
-      .mil-recall-card {{ border:1px solid var(--g-line); border-left:3px solid var(--g-red); background:var(--g-panel); padding:1.05rem 1.25rem; }}
-      .mil-recall-label {{ color:var(--g-red); font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }}
+      .mil-recall-card {{ border:1px solid var(--g-line); border-left:3px solid var(--g-mil-accent); background:var(--g-mil-bg); padding:1.05rem 1.25rem; }}
+      .mil-recall-label {{ color:var(--g-mil-label); font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }}
       .mil-recall-value {{ color:var(--g-text); font-size:2.85rem; font-weight:700; line-height:1.05; margin:.35rem 0 .45rem; }}
       .mil-recall-status {{ display:flex; align-items:center; gap:.8rem; flex-wrap:wrap; font-size:.92rem; }}
       .mil-recall-check {{ color:var(--g-green); font-weight:600; }}
@@ -818,6 +998,7 @@ def inject_css(light_mode: bool = False) -> None:
       .det-table th {{ position:sticky; top:0; text-align:left; padding:.5rem .7rem; font-weight:600; text-transform:uppercase; font-size:.72rem; letter-spacing:.6px; background:var(--g-panel-2); color:var(--g-muted); border-bottom:1px solid var(--g-line); }}
       .det-table td {{ padding:.42rem .7rem; color:var(--g-text); border-bottom:1px solid var(--g-line); }}
       {light_only_css}
+      {dark_only_css}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
