@@ -1,0 +1,55 @@
+# =============================================================================
+# fine_grained.yaml — config-driven params for the 2nd-stage RMN-vs-Foreign
+# nationality classifier (bonus track).
+# -----------------------------------------------------------------------------
+# Consumed by src/fine_grained/prep.py, train_classifier.py, infer.py.
+# This is entirely separate from the main detector (configs/schema.yaml /
+# train_baseline.yaml) — it runs on crops the detector already labelled
+# military_vessel; it does not change detector classes or thresholds.
+# =============================================================================
+
+# --- Raw sources --------------------------------------------------------------
+raw:
+  rmn_root: data/raw/fine_grained/malaysia_rmn        # class subfolders, single-ship photos
+  foreign_root: data/raw/fine_grained/foreign/train    # Roboflow YOLO detection format
+  # Native foreign classes that are NOT a foreign warship crop, so they are
+  # excluded when cropping: "Non-millitary" is explicitly not military, and
+  # "Pennant no" is a hull-number text region, not a ship.
+  foreign_exclude_classes:
+    - "Non-millitary"
+    - "Pennant no"
+
+# --- Cropping (foreign detection boxes -> single-ship images) -----------------
+crop:
+  pad_frac: 0.12    # context padding around each YOLO box, as a fraction of box size
+  min_size: 24       # px; crops smaller than this on either side are dropped
+
+# --- Output + split -------------------------------------------------------
+processed_dir: data/processed/fine_grained
+val_frac: 0.15       # stratified per source subtype/native-class, seeded
+seed: 42
+
+# --- Class balance --------------------------------------------------------
+# foreign crops vastly outnumber RMN crops (~5000 vs ~360). Cap the majority
+# in the TRAIN split so it can't just learn to always predict "foreign";
+# train_classifier.py also applies inverse-frequency class-weighted loss as a
+# second safety net on top of this cap.
+balance:
+  max_foreign_ratio: 3.0   # cap TRAIN foreign crops at this multiple of TRAIN rmn crops
+
+# --- Training ---------------------------------------------------------------
+train:
+  backbone: resnet18        # resnet18 | efficientnet_b0
+  epochs: 25
+  batch_size: 32
+  lr: 0.0003
+  weight_decay: 0.0001
+  imgsz: 224
+  num_workers: 4
+  patience: 7                # early stopping on val accuracy (epochs w/o improvement)
+  weights_out: models/fine_grained_rmn_classifier.pt
+
+# --- Inference ----------------------------------------------------------------
+infer:
+  conf_floor: 0.55    # softmax confidence below this -> "unknown"
+  imgsz: 224
