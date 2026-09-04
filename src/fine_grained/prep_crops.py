@@ -13,7 +13,6 @@ from pathlib import Path
 import shutil
 from PIL import Image
 import argparse
-import math
 
 
 def yolo_to_bbox(yolo_vals, img_w, img_h):

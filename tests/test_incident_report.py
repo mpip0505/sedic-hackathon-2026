@@ -185,7 +185,7 @@ def test_generate_report_writes_file(tmp_path):
     result_path = generate_report(csv_path, out_path)
     assert result_path == out_path
     assert out_path.exists()
-    content = out_path.read_text()
+    content = out_path.read_text(encoding="utf-8")
     assert "Incident Report" in content
     assert "military_vessel" in content
 

@@ -151,7 +151,6 @@ def _check_sudden_course_change(
 ) -> AnomalyFlag | None:
     points = list(zip(group["timestamp_s"], group["cx"], group["cy"]))
     prev_heading = None
-    prev_t = None
     for i in range(1, len(points)):
         t0, x0, y0 = points[i - 1]
         t1, x1, y1 = points[i]
@@ -171,7 +170,6 @@ def _check_sudden_course_change(
                     at_timestamp_s=round(float(t1), 2),
                 )
         prev_heading = heading
-        prev_t = t1
     return None
 
 

@@ -254,13 +254,11 @@ def run(config: dict, smoke: bool = False, dry_run: bool = False) -> int:
     best_val_acc = -1.0
     best_state = None
     epochs_no_improve = 0
-    last_val_result = None
 
     for epoch in range(1, epochs + 1):
         train_result = run_epoch(model, train_loader, criterion, optimizer, device, train=True)
         val_result = run_epoch(model, val_loader, criterion, optimizer, device, train=False)
         scheduler.step()
-        last_val_result = val_result
         logger.info(
             "epoch %3d/%d  train_loss=%.4f train_acc=%.3f  val_loss=%.4f val_acc=%.3f",
             epoch, epochs, train_result["loss"], train_result["acc"],
