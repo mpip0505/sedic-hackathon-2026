@@ -184,7 +184,7 @@ def stratified_split(
     """Split each subtype's items independently so both splits cover every subtype."""
     train: list = []
     val: list = []
-    for subtype, subtype_items in items_by_subtype.items():
+    for subtype_items in items_by_subtype.values():
         shuffled = list(subtype_items)
         rng.shuffle(shuffled)
         n_val = max(1, round(len(shuffled) * val_frac)) if len(shuffled) > 1 else 0

@@ -64,8 +64,10 @@ jobs:
       - name: Install test deps
         # Light stack only — the converter/data/train/eval tests need these but
         # NOT torch/ultralytics (those code paths are lazily imported and not
-        # exercised here). Keeps CI fast on every push.
-        run: python -m pip install --upgrade pip pytest numpy pillow pyyaml
+        # exercised here). pandas is for src/analysis + src/reports (trajectory
+        # anomaly / incident report), which are pandas-based but also torch-free.
+        # Keeps CI fast on every push.
+        run: python -m pip install --upgrade pip pytest numpy pillow pyyaml pandas
 
       - name: Run test suite
         # Covers the frozen Detection contract, converters, the data pipeline

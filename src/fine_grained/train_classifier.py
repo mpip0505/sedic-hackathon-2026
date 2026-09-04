@@ -64,7 +64,7 @@ def _count_images(split_dir: Path) -> dict[str, int]:
 # Model
 # ---------------------------------------------------------------------------
 def build_model(backbone: str, num_classes: int):
-    import torch.nn as nn
+    from torch import nn
     from torchvision import models
 
     if backbone == "resnet18":

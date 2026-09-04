@@ -9,10 +9,11 @@ This script will:
 - For the `foreign` Roboflow YOLO detection format (train/valid/test), read
   corresponding label `.txt` files and crop each box out into OUT/foreign/.
 """
-from pathlib import Path
-import shutil
-from PIL import Image
 import argparse
+import shutil
+from pathlib import Path
+
+from PIL import Image
 
 
 def yolo_to_bbox(yolo_vals, img_w, img_h):
@@ -62,7 +63,7 @@ def crop_foreign(foreign_root: Path, out_root: Path, limit_per_split: int | None
                 continue
             try:
                 img = Image.open(img_path).convert('RGB')
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 — one bad image must not stop the run
                 continue
             w, h = img.size
             with open(label_path, 'r') as fh:

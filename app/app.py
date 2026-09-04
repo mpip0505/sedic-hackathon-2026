@@ -42,9 +42,10 @@ if str(_REPO_ROOT) not in sys.path:
 # file in pyproject.toml rather than with an inline suppression comment, because
 # current ruff already understands the sys.path idiom and would then flag that
 # comment itself as an unused directive (RUF100).
+from src.fine_grained import infer as fg
 from src.inference import predict as gp
 from src.inference.predict import Detection
-from src.fine_grained import infer as fg
+
 # `fg` (like `gp`) keeps torch/torchvision as lazy imports inside its
 # functions, so importing it here doesn't break stub mode's no-torch promise.
 
@@ -1293,7 +1294,8 @@ def classify_military_crops(
         return {}
     try:
         model, classes, imgsz = get_fg_model(weights)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — bonus overlay must never crash the view
+        st.warning(f"Nationality classifier unavailable: {type(exc).__name__}: {exc}")
         return {}
     transform = fg.build_transform(imgsz)
     image_rgb = to_rgb(image_bgr)
@@ -1311,7 +1313,7 @@ def classify_military_crops(
         try:
             crop = Image.fromarray(image_rgb[cy1:cy2, cx1:cx2])
             results[i] = fg.classify(crop, model, transform, classes, conf_floor)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 — one bad crop must not skip the rest
             continue
     return results
 

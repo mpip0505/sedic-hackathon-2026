@@ -152,7 +152,7 @@ def _check_sudden_course_change(
     points = list(zip(group["timestamp_s"], group["cx"], group["cy"]))
     prev_heading = None
     for i in range(1, len(points)):
-        t0, x0, y0 = points[i - 1]
+        _t0, x0, y0 = points[i - 1]
         t1, x1, y1 = points[i]
         dx, dy = x1 - x0, y1 - y0
         move = math.hypot(dx, dy)
@@ -205,7 +205,7 @@ def _check_restricted_zone(
 ) -> AnomalyFlag | None:
     points = list(zip(group["timestamp_s"], group["cx"], group["cy"]))
     for i in range(1, len(points)):
-        t0, x0, y0 = points[i - 1]
+        _t0, x0, y0 = points[i - 1]
         t1, x1, y1 = points[i]
         if _segment_intersects_box(x0, y0, x1, y1, zone):
             return AnomalyFlag(
