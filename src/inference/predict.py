@@ -34,7 +34,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCHEMA_PATH = _REPO_ROOT / "configs" / "schema.yaml"
 
 # Used when `weights` is None on the real path. Gitignored — see CLAUDE.md.
-DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "baseline_best.pt"
+# `baseline2_best.pt` is the shipped model (2026-09-04): the 2026-08-07 retrain
+# on the civilian_gapfill-merged build, ~27% fewer civilian-as-military false
+# positives than the original `baseline_best.pt`. It was briefly marked "not
+# shipped" over a FAILed canonical gate (0.892), which turned out to be a bug
+# in `src/eval/metrics.py` (it read Ultralytics' `box.r` at a shared cross-
+# class max-F1 index rather than at the actual operating `conf`) — with that
+# fixed, the canonical gate reads 0.936, PASS. See docs/PROGRESS.md decision
+# log, 2026-09-04, and data/DATASETS.md.
+DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "baseline2_best.pt"
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm"}
 

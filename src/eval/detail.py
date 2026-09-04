@@ -21,7 +21,7 @@ order — the standard PASCAL-VOC @0.5 matching, computed at the ACTUAL operatin
 threshold (not Ultralytics' max-F1 point, so numbers may differ slightly from
 metrics.py's box.r). recall = TP/(TP+FN), precision = TP/(TP+FP).
 
-    python -m src.eval.detail --weights models/baseline_best.pt \\
+    python -m src.eval.detail --weights models/baseline2_best.pt \\
         --data configs/data.yaml --split test --device cpu
 
 Ultralytics/torch are imported lazily inside `collect_predictions`, so importing

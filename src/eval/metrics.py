@@ -5,7 +5,7 @@ the one hard competition requirement: **recall > 90% on military classes**.
 Called automatically at the end of training (src/train/train.py) and runnable
 standalone. Exits nonzero when the gate fails.
 
-    python -m src.eval.metrics --weights models/baseline_best.pt \\
+    python -m src.eval.metrics --weights models/baseline2_best.pt \\
         --data configs/data.yaml --split val --conf 0.10
 
 Ultralytics/torch are imported lazily inside `evaluate`, so importing this
@@ -45,6 +45,40 @@ class GateResult:
         return m is not None and m >= self.gate
 
 
+# Ultralytics' own val() NMS floor. Deliberately far below any real operating
+# point (conf_military=0.10, conf=0.25) so the confidence curve stays fully
+# resolved at both — see the note in `evaluate()` on why the floor and the
+# reporting threshold must NOT be the same value.
+_VAL_CONF_FLOOR = 0.001
+
+
+def _recall_at_conf(box_metric, conf: float) -> dict[int, float]:
+    """Per-class recall read off the confidence curve AT a fixed `conf`.
+
+    `model.val()`'s own `box.r` is NOT recall at the `conf` passed to `val()` —
+    that argument only sets the NMS candidate floor. The reported `box.r` is
+    every class's recall read off ONE index shared across ALL classes: wherever
+    `f1_curve.mean(0)` (F1 averaged ACROSS EVERY CLASS, not just this one) peaks
+    (see ultralytics/utils/metrics.py, `ap_per_class()`). That index is rarely
+    anywhere near `conf`, isn't military-specific, and drifts run-to-run with
+    unrelated classes' precision/recall — confirmed against this repo's own
+    checkpoints: it read 0.892 on a model whose recall at the ACTUAL deployed
+    conf_military=0.10 was 0.938 (`src/eval/detail.py`, explicit VOC matching).
+
+    `box_metric.r_curve` (nc, 1000) and `box_metric.px` (1000,) are the
+    per-class recall-vs-confidence curve Ultralytics already computed — reading
+    the value at the index nearest `conf` gives recall at the real operating
+    point instead, with no extra inference pass.
+    """
+    import numpy as np
+
+    idx = int(np.argmin(np.abs(box_metric.px - conf)))
+    return {
+        int(cls_id): float(box_metric.r_curve[row, idx])
+        for row, cls_id in enumerate(box_metric.ap_class_index)
+    }
+
+
 def evaluate(
     weights: Path | str,
     data: Path | str,
@@ -59,8 +93,10 @@ def evaluate(
 
     `split` is REQUIRED (keyword-only) so the gate can never silently default to
     the wrong split — it must be the held-out `test` split the model never saw
-    for checkpoint selection. `conf` defaults to the low military operating
-    point (recall gate) rather than the general 0.25 threshold.
+    for checkpoint selection. `conf` is the FIXED operating point recall is
+    reported at (military's deployed conf_military=0.10 by default) — NOT the
+    NMS floor passed to `model.val()`, which stays low (`_VAL_CONF_FLOOR`) so
+    the confidence curve is fully resolved at `conf`. See `_recall_at_conf`.
     """
     from ultralytics import YOLO  # lazy: keep torch out of import time
 
@@ -68,13 +104,14 @@ def evaluate(
     military_ids = schema_utils.military_class_ids(schema)
 
     model = YOLO(str(weights))
-    metrics = model.val(data=str(data), split=split, conf=conf, imgsz=imgsz,
-                        verbose=False)
+    metrics = model.val(data=str(data), split=split, conf=_VAL_CONF_FLOOR,
+                        imgsz=imgsz, verbose=False)
 
     names = metrics.names  # {class_id: name}
-    per_class: dict[str, float] = {}
-    for i, cls_id in enumerate(metrics.box.ap_class_index):
-        per_class[names[int(cls_id)]] = float(metrics.box.r[i])
+    recall_at_conf = _recall_at_conf(metrics.box, conf)
+    per_class: dict[str, float] = {
+        names[cls_id]: recall_at_conf[cls_id] for cls_id in recall_at_conf
+    }
 
     military_names = {names[i] for i in military_ids if i in names}
     military = {n: per_class[n] for n in military_names if n in per_class}
