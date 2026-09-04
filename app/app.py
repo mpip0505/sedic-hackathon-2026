@@ -30,6 +30,8 @@ import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
+import yaml
+from PIL import Image
 
 # Make the repo root importable when Streamlit runs this file directly.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +44,9 @@ if str(_REPO_ROOT) not in sys.path:
 # comment itself as an unused directive (RUF100).
 from src.inference import predict as gp
 from src.inference.predict import Detection
+from src.fine_grained import infer as fg
+# `fg` (like `gp`) keeps torch/torchvision as lazy imports inside its
+# functions, so importing it here doesn't break stub mode's no-torch promise.
 
 # --- Copy -------------------------------------------------------------------
 APP_TITLE = "Project Guardian"
@@ -58,25 +63,25 @@ DEFAULT_CONF = 0.25
 DEFAULT_CONF_MILITARY = 0.25
 
 # --- Baseline picker ----------------------------------------------------------
-# Testing-only side-by-side choice between checkpoints, ahead of the uploader in
-# the sidebar. Both live side by side in models/ (gitignored — neither exists on
-# a fresh clone or in CI; the existing weights-file-missing check below degrades
-# that gracefully to an error message, not a crash). Hand-off note for whoever
-# places the files: `baseline_best.pt` is the shipped, gate-passing model;
-# `baseline2_best.pt` is the retrain candidate — see BASELINE2_NOTE below for
-# why it's not shipped. Never hardcode a third path here without updating that.
-BASELINE2_LABEL = "Baseline 2 (retrain candidate)"
+# `models/` is gitignored — weights may not exist on a fresh clone or in CI;
+# the existing weights-file-missing check below degrades that gracefully to an
+# error message, not a crash.
+#
+# Shipped model (2026-09-04): `baseline2_best.pt` — the 2026-08-07 retrain on
+# the civilian_gapfill-merged data build, ~27% fewer civilian-as-military false
+# positives than the original `baseline_best.pt`. It was briefly logged as
+# FAILing the canonical gate (metrics.py, 0.892) and marked "not shipped", but
+# that was a bug in metrics.py's recall reading (it read Ultralytics' box.r at
+# a shared cross-class max-F1 index, not at the actual operating `conf`) — with
+# that fixed, the canonical gate reads 0.936, PASS, consistent with the
+# per-domain diagnostic (detail.py: aerial 0.932 / surface 0.977 / overall
+# 0.938). See docs/PROGRESS.md decision log (2026-09-04) and data/DATASETS.md.
+# The original `baseline_best.pt` is kept in `models/` for reference but is no
+# longer a preset here — use "Custom path…" to point at it if ever needed.
 BASELINE_CHOICES: dict[str, str] = {
     "Baseline (shipped)": str(gp.DEFAULT_WEIGHTS),
-    BASELINE2_LABEL: str(_REPO_ROOT / "models" / "baseline2_best.pt"),
 }
 CUSTOM_BASELINE_LABEL = "Custom path…"
-BASELINE2_NOTE = (
-    "Baseline 2: failed the canonical military-recall gate (metrics.py, 0.892 < "
-    "0.90) but passes the per-domain diagnostic (detail.py: aerial 0.932 / "
-    "surface 0.977 / overall 0.938) with ~27% fewer civilian-as-military false "
-    "positives — see data/DATASETS.md. Not shipped; for comparison testing only."
-)
 
 # --- Evaluation report --------------------------------------------------------
 # The landing page never hardcodes gate numbers — a stale figure in front of a
@@ -86,6 +91,35 @@ EVAL_GATE = 0.90
 # The gate's actual operating threshold, read from the frozen predict() signature
 # rather than retyped here.
 CONF_MILITARY_GATE = inspect.signature(gp.predict).parameters["conf_military"].default
+
+# --- Bonus: RMN-vs-Foreign nationality classifier (optional, 2nd-stage) -----
+# Read from configs/fine_grained.yaml rather than retyped here, so the demo
+# can't drift from what training actually used. Val accuracy 0.98, but that
+# figure is inflated by an image-source domain gap between the two training
+# sets, not pure vessel-identity recognition — see docs/PROGRESS.md §4. The
+# sidebar surfaces that caveat; do not present the number without it.
+_FG_CONFIG_PATH = _REPO_ROOT / "configs" / "fine_grained.yaml"
+_FG_CONFIG: dict = {}
+if _FG_CONFIG_PATH.exists():
+    with open(_FG_CONFIG_PATH, "r", encoding="utf-8") as _fh:
+        _FG_CONFIG = yaml.safe_load(_fh) or {}
+FG_DEFAULT_WEIGHTS = _REPO_ROOT / _FG_CONFIG.get("train", {}).get(
+    "weights_out", "models/fine_grained_rmn_classifier.pt"
+)
+FG_DEFAULT_CONF_FLOOR = _FG_CONFIG.get("infer", {}).get("conf_floor", 0.55)
+FG_PAD_FRAC = _FG_CONFIG.get("crop", {}).get("pad_frac", 0.12)
+# Side-by-side checkpoint picker, same pattern as BASELINE_CHOICES above. Add
+# a new entry here (never hardcode a path elsewhere) when a new classifier
+# checkpoint is trained and worth comparing against the current one.
+FG_CUSTOM_LABEL = "Custom path…"
+FG_BASELINE_CHOICES: dict[str, str] = {
+    "RMN-vs-Foreign classifier (trained)": str(FG_DEFAULT_WEIGHTS),
+}
+FG_LABEL_DISPLAY = {
+    "malaysian_rmn": "Malaysian RMN",
+    "foreign": "Foreign navy",
+    fg.UNKNOWN: "Unknown",
+}
 
 # --- Colour coding by schema group (BGR for OpenCV, hex for HTML) -----------
 GROUP_COLOURS: dict[str, tuple[tuple[int, int, int], str, str]] = {
@@ -522,6 +556,12 @@ def get_model(weights: str):
     return gp.load_model(weights)
 
 
+@st.cache_resource(show_spinner="Loading nationality classifier…")
+def get_fg_model(weights: str):
+    """Warm the bonus RMN-vs-Foreign classifier once per session."""
+    return fg.load_checkpoint(weights)
+
+
 @st.cache_data(show_spinner=False)
 def load_eval_summary(path_str: str, mtime: float) -> dict | None:
     """Parse the military recall gate out of `outputs/eval/test_eval.md`.
@@ -701,10 +741,11 @@ def render_metrics(dets: list[Detection], elapsed_s: float, frames: int = 1) -> 
 
 
 def detections_dataframe(
-    items: list[tuple[Detection, int | None]], with_track: bool
+    items: list[tuple[Detection, int | None]], with_track: bool,
+    nationality: dict[int, fg.ClassificationResult] | None = None,
 ) -> pd.DataFrame:
     rows = []
-    for det, track_id in items:
+    for idx, (det, track_id) in enumerate(items):
         x1, y1, x2, y2 = (round(v, 1) for v in det.bbox) if det.bbox else (0, 0, 0, 0)
         row = {
             "class": det.class_name,
@@ -712,6 +753,10 @@ def detections_dataframe(
             "confidence": round(det.confidence, 3),
             "x1": x1, "y1": y1, "x2": x2, "y2": y2,
         }
+        if nationality is not None:
+            result = nationality.get(idx)
+            row["nationality"] = FG_LABEL_DISPLAY.get(result.label, result.label) if result else None
+            row["nationality_conf"] = round(result.confidence, 3) if result else None
         if with_track:
             row = {"frame": det.frame, "timestamp_s": det.timestamp,
                    "track_id": track_id, **row}
@@ -721,6 +766,80 @@ def detections_dataframe(
         # Nullable int, so an untracked box reads as blank rather than "nan".
         df["track_id"] = df["track_id"].astype("Int64")
     return df
+
+
+# ---------------------------------------------------------------------------
+# Bonus: RMN-vs-Foreign nationality classification (optional 2nd stage)
+# ---------------------------------------------------------------------------
+def classify_military_crops(
+    image_bgr: np.ndarray,
+    dets: list[Detection],
+    weights: str,
+    conf_floor: float,
+) -> dict[int, fg.ClassificationResult]:
+    """Run the bonus classifier on every military-group detection box.
+
+    Returns `{index into dets: ClassificationResult}`, index-keyed rather than
+    keyed on `Detection` itself since it isn't hashable. Best-effort: a
+    crop/model failure is skipped rather than raised — this is an optional
+    overlay on the frozen detection path, not part of it, so it must never
+    take the main detection view down with it.
+    """
+    military = get_military_classes()
+    idxs = [i for i, d in enumerate(dets) if d.class_name in military]
+    if not idxs:
+        return {}
+    try:
+        model, classes, imgsz = get_fg_model(weights)
+    except Exception:
+        return {}
+    transform = fg.build_transform(imgsz)
+    image_rgb = to_rgb(image_bgr)
+    h, w = image_rgb.shape[:2]
+
+    results: dict[int, fg.ClassificationResult] = {}
+    for i in idxs:
+        x1, y1, x2, y2 = dets[i].bbox
+        bw, bh = x2 - x1, y2 - y1
+        pad_x, pad_y = bw * FG_PAD_FRAC, bh * FG_PAD_FRAC
+        cx1, cy1 = max(0, int(x1 - pad_x)), max(0, int(y1 - pad_y))
+        cx2, cy2 = min(w, int(x2 + pad_x)), min(h, int(y2 + pad_y))
+        if cx2 - cx1 < 8 or cy2 - cy1 < 8:
+            continue
+        try:
+            crop = Image.fromarray(image_rgb[cy1:cy2, cx1:cx2])
+            results[i] = fg.classify(crop, model, transform, classes, conf_floor)
+        except Exception:
+            continue
+    return results
+
+
+def render_nationality_results(
+    image_bgr: np.ndarray,
+    dets: list[Detection],
+    nationality: dict[int, fg.ClassificationResult],
+) -> None:
+    """Bonus panel: a crop thumbnail + predicted nationality per military contact."""
+    if not nationality:
+        return
+    st.markdown('<div class="sb-label">Bonus: nationality classification</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "RMN-vs-Foreign 2nd stage. Val accuracy 0.98, but that figure is "
+        "inflated by an image-source domain gap between the training sets, "
+        "not pure vessel-identity recognition — treat these as indicative, "
+        "not certain. See docs/PROGRESS.md §4."
+    )
+    image_rgb = to_rgb(image_bgr)
+    items = list(nationality.items())
+    cols = st.columns(min(4, len(items)))
+    for n, (i, result) in enumerate(items):
+        x1, y1, x2, y2 = (round(v) for v in dets[i].bbox)
+        crop = image_rgb[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
+        col = cols[n % len(cols)]
+        if crop.size:
+            label = FG_LABEL_DISPLAY.get(result.label, result.label)
+            show_image(crop, f"{label} · {result.confidence:.2f}", slot=col)
 
 
 def render_table(df: pd.DataFrame) -> None:
@@ -839,6 +958,17 @@ def image_view(
     annotated = annotate(original, items)
 
     render_alert(dets)
+
+    nationality: dict[int, fg.ClassificationResult] = {}
+    if settings.get("fg_enabled"):
+        try:
+            nationality = classify_military_crops(
+                original, dets, settings["fg_weights"], settings["fg_conf_floor"]
+            )
+        except Exception as exc:  # noqa: BLE001 — bonus overlay must never crash the view
+            st.warning(f"Nationality classifier failed: {type(exc).__name__}: {exc}")
+        render_nationality_results(original, dets, nationality)
+
     render_summary(dets)
     render_metrics(dets, elapsed)
 
@@ -852,7 +982,10 @@ def image_view(
     )
 
     st.subheader(f"Detections ({len(dets)})")
-    render_table(detections_dataframe(items, with_track=False))
+    render_table(detections_dataframe(
+        items, with_track=False,
+        nationality=nationality if settings.get("fg_enabled") else None,
+    ))
 
 
 def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -> None:
@@ -1050,8 +1183,8 @@ def sidebar() -> dict:
                 "Baseline",
                 options=list(BASELINE_CHOICES) + [CUSTOM_BASELINE_LABEL],
                 disabled=stub,
-                help="Side-by-side testing between trained checkpoints. "
-                     f"{BASELINE2_NOTE}",
+                help="The shipped model, or point at another checkpoint via "
+                     "Custom path…",
             )
             if baseline_label == CUSTOM_BASELINE_LABEL:
                 weights = st.text_input(
@@ -1064,8 +1197,6 @@ def sidebar() -> dict:
                     f'<div class="sb-value" style="margin-bottom:.5rem"><code>{weights}</code></div>',
                     unsafe_allow_html=True,
                 )
-                if baseline_label == BASELINE2_LABEL:
-                    st.caption(BASELINE2_NOTE)
             if not stub:
                 if Path(weights).exists():
                     st.markdown(
@@ -1122,6 +1253,57 @@ def sidebar() -> dict:
         )
         st.markdown(f'<div class="sb-legend">{pills}</div>', unsafe_allow_html=True)
 
+        _sb_break()
+
+        st.markdown('<div class="sb-label">Bonus: Nationality Classifier</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sb-desc">Optional 2nd-stage model: classifies each '
+            'military contact as Malaysian RMN or a foreign navy. '
+            '<b>Caveat:</b> val accuracy 0.98 is inflated by an image-source '
+            'domain gap between the RMN and foreign training data, not pure '
+            'vessel-identity recognition — see docs/PROGRESS.md §4.</div>',
+            unsafe_allow_html=True,
+        )
+        with st.container(key="sb_card_fg"):
+            fg_enabled = st.toggle(
+                "Classify military contacts",
+                value=False,
+                help="Runs the RMN-vs-Foreign classifier on every military-group "
+                     "detection box (image mode only).",
+            )
+            fg_baseline_label = st.selectbox(
+                "Classifier weights",
+                options=list(FG_BASELINE_CHOICES) + [FG_CUSTOM_LABEL],
+                disabled=not fg_enabled,
+                help="Pick a trained checkpoint, or point at a custom path.",
+            )
+            if fg_baseline_label == FG_CUSTOM_LABEL:
+                fg_weights = st.text_input(
+                    "Weights (.pt)", value=str(FG_DEFAULT_WEIGHTS),
+                    disabled=not fg_enabled,
+                    help="Ignored while the toggle above is off.",
+                )
+            else:
+                fg_weights = FG_BASELINE_CHOICES[fg_baseline_label]
+                st.markdown(
+                    f'<div class="sb-value" style="margin-bottom:.5rem"><code>{fg_weights}</code></div>',
+                    unsafe_allow_html=True,
+                )
+            if fg_enabled and not Path(fg_weights).exists():
+                st.error(
+                    f"Classifier weights not found at `{fg_weights}` — train "
+                    "first (`python -m src.fine_grained.train_classifier`) or "
+                    "fix the path."
+                )
+            fg_conf_floor = st.slider(
+                "Confidence floor (below this → unknown)",
+                0.0, 0.99, float(FG_DEFAULT_CONF_FLOOR), 0.01,
+                disabled=not fg_enabled,
+                help="Softmax confidence below this returns 'unknown' rather "
+                     "than a guess.",
+            )
+
     return {
         "stub": stub,
         "weights": "" if stub else weights,
@@ -1130,6 +1312,9 @@ def sidebar() -> dict:
         "tracker": tracker,
         "vid_stride": int(vid_stride),
         "max_frames": int(max_frames),
+        "fg_enabled": fg_enabled,
+        "fg_weights": fg_weights,
+        "fg_conf_floor": fg_conf_floor,
     }
 
 
@@ -1235,7 +1420,7 @@ def landing_page() -> None:
             eval_body = (
                 '<div class="eval-pending">Evaluation report not yet generated for this '
                 'checkout. Run <code>python -m src.eval.detail --weights '
-                'models/baseline_best.pt --split test</code> to produce '
+                'models/baseline2_best.pt --split test</code> to produce '
                 '<code>outputs/eval/test_eval.md</code>.</div>'
             )
         st.markdown(
