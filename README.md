@@ -13,16 +13,17 @@ detects vessels across two visual domains — **frontal/surface** camera views a
 - [x] Phase 0 — repo scaffold, contracts, stub predictor, GUI skeleton
 - [x] Datasets: `military_ships` + `seaships` + `shiprsimagenet` + `military_surface` (Roboflow YOLO)
 - [x] Data pipeline: remap → unified schema, **greedy dedup**, class×domain split, `validate` PASS
-      (13,500 imgs kept; train 9,452 / val 2,699 / test 1,349 — see `docs/PROGRESS.md`)
+      (`civilian_gapfill`-merged build; train 11,125 / val 3,177 / test 1,588 — see `docs/PROGRESS.md`)
 - [x] **Surface-military gap CLOSED** with real frontal warships (`military_surface`):
       `military_vessel` now in all 3 splits on surface (test: 371 real instances / 293 imgs).
       `surface_synth` copy-paste set to zero for the next run (code retained/toggleable)
-- [x] Baseline training (`yolo11m`, HBB, 100 epochs) — **DONE** (RTX 3060, local)
-- [x] Evaluation harness + military recall gate report — **PASS** (0.904, real surface+aerial)
+- [x] Baseline training (`yolo11m`, HBB, 100 epochs) — **DONE** (RTX 3060, local). Shipped:
+      `baseline2_best.pt` (2026-08-07 retrain, fewer civilian-as-military false positives)
+- [x] Evaluation harness + military recall gate report — **PASS** (0.936, real surface+aerial)
 - [x] Real inference path in `predict()` (Ultralytics, per-class thresholds)
 - [x] GUI: box drawing, live thresholds, video tracking + CSV detection log
 - [ ] Bonus: oriented boxes (OBB)
-- [ ] Bonus: fine-grained RMN-vs-foreign 2nd stage
+- [x] Bonus: fine-grained RMN-vs-foreign 2nd stage (`src/fine_grained/`, ResNet18) — 0.98 val accuracy, but inflated by an RMN/foreign domain gap, not purely vessel identity; see `docs/PROGRESS.md` §4
 - [ ] Deliverables: technical brief, video, poster
 
 ---
@@ -116,6 +117,7 @@ cat data/raw/seaships/data.yaml                        # check class name string
 | `seaships` | surface | ~7k | YOLO (Roboflow) | `ship-detection-cedpa/seaships-spcag` v1 | CC BY 4.0 |
 | `shiprsimagenet` | aerial | ~4.6k | YOLO (Roboflow) | `convertvoctoyolo/shiprsimagenet` v39 | CC BY 4.0¹ |
 | `military_surface` | **surface** | ~3.0k | YOLO (Roboflow) | `hannah-agkvq/military-ship-detection-qxv5m` v2 | CC BY 4.0 |
+| `civilian_gapfill` | surface | 6,213 raw / 2,521 kept | YOLO (Roboflow) | `boats-ri7td/speedboat` v2 | CC BY 4.0 |
 
 All arrive **already in YOLO format** with their own `train/valid/test` split —
 that split is **discarded**; `merge.py` does its own stratified split. The Roboflow
@@ -125,20 +127,15 @@ provenance and licences: `data/DATASETS.md`.
 _¹ the Roboflow re-export declares CC BY 4.0; the underlying ShipRSImageNet is
 academic-use-only — attribute both, don't claim commercial rights._
 
-### Acquired, not yet in use
-| Name | Domain | Images | Format | Source | Licence |
-|------|--------|-------:|--------|--------|--------|
-| `civilian_gapfill` | surface | 6,213 | YOLO (Roboflow) | `boats-ri7td/speedboat` v2 | CC BY 4.0 |
-
 Fetched with `python scripts/download_civilian_gapfill.py` into
-`data/raw/civilian_gapfill/`. Close-view **civilian** surface imagery, acquired to
-reduce civilian vessels being detected as `military_vessel`. It is **not** merged
-into `data/processed/`, not mapped in `configs/schema.yaml`, and **not** trained
-into `models/baseline_best.pt` — every number under `## Results` is from a build
-without it. Despite the project name, its real taxonomy is 18 classes of which only
-four are vessels (`Fishing-boats`, `speedboat`, `Yacht`, `tugboat`) and ~67% of
-boxes carry junk boilerplate labels; the full class list and the ingest caveats are
-in `data/DATASETS.md`.
+`data/raw/civilian_gapfill/`. Close-view **civilian** surface imagery, added to
+reduce civilian vessels being detected as `military_vessel`, and merged into the
+current `data/processed/` build (train 11,125 / val 3,177 / test 1,588) — the
+build `models/baseline2_best.pt` (the shipped model, see `## Results`) is trained
+on. Despite the project name, its real taxonomy is 18 classes of which only four
+are vessels (`Fishing-boats`, `speedboat`, `Yacht`, `tugboat`) and ~67% of boxes
+carry junk boilerplate labels; the full class list and the ingest caveats are in
+`data/DATASETS.md`.
 
 > **Surface-military gap — closed.** `military_surface` is the first **real**
 > frontal-view warship set, giving `military_vessel` surface coverage in all three
@@ -188,7 +185,7 @@ Ultralytics itself.
 streamlit run app/app.py                 # venv must have ultralytics + streamlit
 ```
 
-Opens `localhost:8501`. It loads `models/baseline_best.pt` by default and warms
+Opens `localhost:8501`. It loads `models/baseline2_best.pt` by default and warms
 the weights at startup, so the first upload is already fast.
 
 ## The controls
@@ -196,7 +193,7 @@ the weights at startup, so the first upload is already fast.
 | Sidebar control | What it does |
 |---|---|
 | **Stub mode** | Synthetic detections, no model. Auto-on if weights are missing — the fallback if anything breaks on demo day |
-| **Weights (.pt)** | Path to the model. Defaults to `models/baseline_best.pt` |
+| **Weights (.pt)** | Path to the model. Defaults to `models/baseline2_best.pt` |
 | **Confidence — civilian** | Threshold for the 7 non-military classes |
 | **Confidence — military** | Threshold for `military_vessel` — **the recall knob** |
 | **Tracker** | `botsort.yaml` (stable IDs) or `bytetrack.yaml` (faster). Video only |
@@ -214,8 +211,8 @@ That asymmetry is the competition gate, not an oversight.
 
 | Setting | Effect | Use it for |
 |---|---|---|
-| Military **0.10**, civilian 0.25 | Max recall (0.942 on test), more false positives | The **gate posture** — matches `predict()`'s default and the eval numbers |
-| Military **0.25**, civilian 0.25 | Recall 0.921 at precision 0.888 | The **GUI default** — cleanest picture for a live demo |
+| Military **0.10**, civilian 0.25 | Max recall (0.938 on test) — canonical gate 0.936 | The **gate posture** — matches `predict()`'s default and the eval numbers |
+| Military **0.25**, civilian 0.25 | Recall 0.915 at precision 0.891 | The **GUI default** — cleanest picture for a live demo |
 | Military **0.30+** | Recall drifts toward the 0.90 floor | Only to show the tradeoff; don't ship it |
 | Military **above** civilian | Inverts the priority — the sidebar warns you | Illustrating *why* the asymmetry exists |
 
@@ -228,13 +225,13 @@ qualitative. For the actual recall/precision numbers, sweep with the evaluator:
 
 ```bash
 # dump predictions once, then re-score at any thresholds for free
-python -m src.eval.detail --weights models/baseline_best.pt --split val \
+python -m src.eval.detail --weights models/baseline2_best.pt --split val \
     --thresholds 0.05,0.10,0.15,0.20,0.25,0.30 --dump outputs/sweep_val.json
 python -m src.eval.detail --from-dumps outputs/sweep_val.json \
     --thresholds 0.22,0.24,0.26,0.28 --md-out outputs/sweep.md
 
 # single pass/fail check (exits nonzero below 0.90)
-python -m src.eval.metrics --weights models/baseline_best.pt --split val --conf 0.10
+python -m src.eval.metrics --weights models/baseline2_best.pt --split val --conf 0.10
 ```
 
 Sweep on **val**; confirm the final pick once on **test**. Repeatedly tuning
@@ -375,78 +372,88 @@ Deliberately coarse — fragmenting military into many ship types collapses reca
 
 ## Results
 
-Baseline `yolo11m`, 100 epochs, trained 2026-07-28 (RTX 3060, local) on the current
-build — **the first run to include real surface-military data** (`military_surface`,
-371 real instances in TEST). `models/baseline_best.pt`, gate scored on the held-out
-**TEST** split via `python -m src.eval.metrics` (Ultralytics val pass, `conf_military
-= 0.10`).
+Shipped model `models/baseline2_best.pt` — `yolo11m`, 100 epochs, trained 2026-08-07
+(RTX 3060, local) on the `civilian_gapfill`-merged build (train 11,125 / val 3,177 /
+test 1,588; `military_surface` supplies real surface-military coverage, 371 real
+instances in TEST). Replaced `baseline_best.pt` (the original 2026-07-28 run) on
+2026-09-04 — ~27% fewer civilian-vessels-detected-as-`military_vessel` false positives,
+see `docs/DATASETS.md`. Gate scored on the held-out **TEST** split via
+`python -m src.eval.metrics` (Ultralytics val pass, `conf_military = 0.10`).
 
 **The gate — military recall, real surface+aerial combined:**
 
 | | Military recall (conf 0.10) | Gate >0.90 |
 |---|----------------------------:|:----------:|
-| **overall (TEST)** | **0.904** | ✅ **PASS** |
+| **overall (TEST)** | **0.936** | ✅ **PASS** |
 
 Per-class recall (TEST, same pass):
 
 | Class | Recall |
 |---|---:|
-| cargo | 0.934 |
-| container_ship | 0.892 |
-| tanker | 0.872 |
-| **military_vessel** | **0.904** |
-| fishing_boat | 0.815 |
-| yacht | 0.769 |
-| passenger_ferry | 0.768 |
-| speedboat | 0.384 ⚠️ |
+| cargo | 0.944 |
+| container_ship | 0.904 |
+| tanker | 0.918 |
+| **military_vessel** | **0.936** |
+| fishing_boat | 0.872 |
+| yacht | 0.802 |
+| passenger_ferry | 0.875 |
+| speedboat | 0.716 |
 
-Overall (all classes, TEST, conf 0.10): precision 0.841, recall 0.792, **mAP50 0.851**,
-**mAP50-95 0.651**.
-
-> ⚠️ **`speedboat` recall (0.384) is low and worth investigating** — not part of the
-> military gate, but flagged here rather than left silent.
+Overall (all classes, TEST, conf 0.10): precision 0.838, recall 0.795, **mAP50 0.856**,
+**mAP50-95 0.627**.
 
 **`conf_military` threshold sweep** (test split, IoU 0.50, via `src/eval/detail.py`):
 
 | conf | recall | precision | gate >0.90 |
 |-----:|-------:|----------:|:----------:|
-| 0.05 | 0.952 | 0.726 | ✅ PASS |
-| **0.10** | **0.942** | 0.805 | ✅ PASS |
-| 0.15 | 0.933 | 0.846 | ✅ PASS |
-| 0.20 | 0.927 | 0.869 | ✅ PASS |
-| 0.25 | 0.921 | 0.888 | ✅ PASS |
-| 0.30 | 0.915 | 0.901 | ✅ PASS |
+| 0.05 | 0.949 | 0.705 | ✅ PASS |
+| **0.10** | **0.938** | 0.796 | ✅ PASS |
+| 0.15 | 0.929 | 0.842 | ✅ PASS |
+| 0.20 | 0.922 | 0.871 | ✅ PASS |
+| 0.25 | 0.915 | 0.891 | ✅ PASS |
+| 0.30 | 0.909 | 0.906 | ✅ PASS |
 
 **Per-domain military recall — the whole reason `military_surface` was added:**
 
 | domain | military recall | gate >0.90 |
 |--------|-----------------:|:----------:|
-| aerial | 0.940 | ✅ |
-| surface | 0.954 | ✅ |
-| **overall** | **0.942** | ✅ **PASS** |
+| aerial | 0.932 | ✅ |
+| surface | 0.977 | ✅ |
+| **overall** | **0.938** | ✅ **PASS** |
 
 Both domains individually clear the gate — surface (real `military_surface` data)
-actually scores *higher* recall than aerial. `speedboat` (see warning above) is aerial-only
-in TEST (0.485) with no surface instances to average against, which is why it doesn't
-show up here as a gate risk despite the low number.
+actually scores *higher* recall than aerial.
 
 <details>
-<summary>Note on `detail.py`'s numbers vs. the canonical gate (0.942 vs 0.904)</summary>
+<summary>Note on `detail.py`'s numbers vs. the canonical gate (0.938 vs 0.936)</summary>
 
 `metrics.py`/`model.val()` (the canonical gate) and `detail.py` (this sweep) use
-different matching: Ultralytics' internal max-F1-point matching vs. this script's
-explicit greedy PASCAL-VOC @0.5 matching *at the actual `conf_military=0.10`
-operating point*. Both pass the gate; treat `metrics.py`'s 0.904 as the
-authoritative number and this table as the diagnostic breakdown.
+different matching: Ultralytics' internal per-class recall-at-conf reading vs. this
+script's explicit greedy PASCAL-VOC @0.5 matching *at the actual `conf_military=0.10`
+operating point*. Both pass the gate and now agree closely; treat `metrics.py`'s 0.936
+as the authoritative number and this table as the diagnostic breakdown.
 
-Getting this to run also required a real fix: `model.predict(stream=True, ...)`
+`metrics.py` itself had a real bug until 2026-09-04: it read Ultralytics'
+`metrics.box.r` directly, which is recall at **one confidence index shared across every
+class** (wherever mean F1 *averaged over all classes* peaks) — not at the actual
+`conf` argument, and not per-class. That's why this table and the canonical gate used
+to disagree by a much larger margin (0.942 vs 0.904 on the previous model). Fixed by
+reading recall directly off Ultralytics' per-class `r_curve` at the index nearest the
+real operating `conf` — see `src/eval/metrics.py` and `docs/PROGRESS.md`'s decision log
+(2026-09-04) for the full story, including why the fix is still uncommitted pending
+team review.
+
+Getting `detail.py` to run also required a real fix: `model.predict(stream=True, ...)`
 lets every image pick its own letterboxed shape (`auto=True` for single-image
 batches), and on a long GPU stream that fragments/accumulates until a normal-sized
 allocation OOMs partway through — not a bad image, confirmed by bisection (identical
 slices OOM at different points depending only on how many images had already
 streamed in-process). Fixed by chunking collection into fresh-process slices via
 `--start`/`--end`/`--dump`, then combining with `--from-dumps` — chunked collection
-is now the standard way to run this script on GPU.
+is now the standard way to run this script on GPU. On Windows specifically,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (this script's other mitigation)
+silently no-ops (confirmed via the runtime `UserWarning`), so chunks need to stay
+small — 200 images/chunk worked reliably where 400 still OOM'd.
 </details>
 
 ---

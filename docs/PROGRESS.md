@@ -1,6 +1,6 @@
 # Project Guardian — Progress Report
 
-_Last updated: 2026-08-05 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
+_Last updated: 2026-09-04 · SEDIC 2026 Visual Track · Maritime Domain Awareness_
 
 This report reflects the **actual state of the repo** (code, configs, tests) as of
 the date above. The baseline has been trained and the military-recall gate has been
@@ -11,20 +11,30 @@ measured on real, held-out test data — see §1 and the decision log for number
 ## 1. Current status
 
 The **data pipeline is built and has been run end-to-end on real data**; a clean,
-deduplicated, stratified `data/processed/` split exists and passes validation. The
-**baseline has been trained (100 epochs, RTX 3060 local) and the military-recall
-gate has been measured** on the held-out test split, on the first build to include
-real surface-military data. The **real inference path and the presentation GUI are
-now built** — `predict()` runs the trained model, and `app/app.py` does live
-image/video detection with tracked IDs and a CSV detection log. The bonus tracks
-and all deliverables are not yet started.
+deduplicated, stratified `data/processed/` split exists and passes validation
+(now the `civilian_gapfill`-merged build — train 11,125 / val 3,177 / test
+1,588 — see the 2026-09-04 decision log entry; §2's counts below still
+describe the prior build and need a refresh, tracked in §4). The **baseline
+has been trained (100 epochs, RTX 3060 local) and the military-recall gate has
+been measured** on the held-out test split. **The shipped model changed on
+2026-09-04**: `models/baseline2_best.pt` (the 2026-08-07 retrain, ~27% fewer
+civilian-as-military false positives) replaces `baseline_best.pt` — it was
+briefly logged as failing the canonical gate, which turned out to be a bug in
+`src/eval/metrics.py`'s recall reading, not the model; see the decision log.
+The **real inference path and the presentation GUI are now built** —
+`predict()` runs the trained model, and `app/app.py` does live image/video
+detection with tracked IDs and a CSV detection log. The **bonus RMN-vs-foreign
+2nd-stage classifier is now built** (`src/fine_grained/`) and reports 0.98 val
+accuracy — but that number is inflated by a domain gap between the two data
+sources, presented honestly rather than overstated; see §4. The OBB bonus and
+all deliverables are not yet started.
 
 Against the two core competition requirements:
 
 | Requirement | Status |
 |---|---|
 | **Multi-angle detection (frontal + aerial)** | Both domains present in every split. `military_vessel` now has **real surface** coverage via `military_surface` (2,928 surface imgs; test holds 371 real surface-military instances), and the gate has been measured on both domains independently — see below. |
-| **Recall > 90% on military classes** | ✅ **PASS.** Canonical gate (`metrics.py`, TEST, `conf_military=0.10`): **0.904** overall. Per-domain breakdown (`detail.py`): aerial **0.940**, surface **0.954**, overall **0.942** — both domains individually clear >0.90. |
+| **Recall > 90% on military classes** | ✅ **PASS.** Shipped model `baseline2_best.pt`. Canonical gate (`metrics.py`, TEST, `conf_military=0.10`): **0.936** overall. Per-domain breakdown (`detail.py`): aerial **0.932**, surface **0.977**, overall **0.938** — both domains individually clear >0.90. |
 
 ### Pipeline checklist
 
@@ -32,19 +42,19 @@ Against the two core competition requirements:
 |---|---|---|
 | Phase 0 scaffold | ✅ Done | dirs, configs, CI, `.gitignore`, requirements |
 | Contracts (`schema.yaml`, `predict()`/`Detection`, `--stub`) | ✅ Done | stub runs with no torch/weights |
-| Data acquisition (4 datasets in the build) | ✅ Done | Roboflow YOLO exports in `data/raw/`. A 5th, `civilian_gapfill`, was downloaded 2026-08-05 but is **not ingested or trained in** — see §2.1 |
+| Data acquisition (4 datasets in the build) | ✅ Done | Roboflow YOLO exports in `data/raw/`. A 5th, `civilian_gapfill`, was downloaded 2026-08-05 and **is now merged into `data/processed/`** (train 11,125 / val 3,177 / test 1,588, confirmed 2026-09-04) — §2.1's prose still describes the prior build; refresh tracked in §4 |
 | Converters (voc / dota / cls / **yolo2yolo**) | ✅ Done | all unit-tested |
 | Schema class mapping (50 → 8 collapse) | ✅ Done | anchored, shared by 2 datasets |
 | Merge → dedup → stratified split | ✅ Done | greedy de-chained dedup; `data/processed/` produced |
 | `validate` (label sanity + leakage) | ✅ Done | **PASS** (leak threshold = dedup threshold) |
 | Balance / copy-paste augmentation | ✅ Available | same-domain + cross-domain `surface_synth` (train-only); `surface_synth` **set to zero** for the current build now that real surface-military exists |
-| Training wrapper (`src/train/train.py`) | ✅ **Done — run** | `yolo11m`, 100 epochs, RTX 3060 local, `models/baseline_best.pt` |
-| Eval / military-recall gate (`src/eval/metrics.py` + `src/eval/detail.py`) | ✅ **Done — run** | overall **0.904** PASS; per-domain aerial 0.940 / surface 0.954 PASS |
+| Training wrapper (`src/train/train.py`) | ✅ **Done — run** | `yolo11m`, 100 epochs, RTX 3060 local. Shipped: `models/baseline2_best.pt` (trained 2026-08-07) — see 2026-09-04 decision log for why it replaced `baseline_best.pt` |
+| Eval / military-recall gate (`src/eval/metrics.py` + `src/eval/detail.py`) | ✅ **Done — run** | shipped model (`baseline2_best.pt`): canonical **0.936** PASS; per-domain aerial 0.932 / surface 0.977 / overall 0.938 PASS. `metrics.py` had a recall-reading bug, fixed 2026-09-04 — see decision log |
 | Real inference path (`predict()` non-stub) | ✅ **Done** | Ultralytics-backed, lazy import, per-class thresholds; `--stub` unaffected |
 | Detection log on Qualifier Clip | 🟡 Mechanism ready | GUI exports `frame,timestamp_s,track_id,class,group,confidence,bbox` CSV; clip not yet provided |
 | GUI (`app/app.py`) | ✅ **Done** | box drawing, live thresholds, military alert, before/after, BoT-SORT video playback + CSV log |
 | Bonus: oriented boxes (OBB) | 🔴 Not started | HBB envelope in place as precursor |
-| Bonus: RMN-vs-foreign 2nd stage | 🔴 Not started | `src/fine_grained/` is an empty package |
+| Bonus: RMN-vs-foreign 2nd stage | 🟡 Built — presented with a caveat | ResNet18 classifier, 0.98 val accuracy, but the number is inflated by an RMN/foreign domain gap (image-source style, not purely vessel identity) — see §4 |
 | Deliverables (brief / video / poster) | 🔴 Not started | |
 | CI (ruff + schema + stub + pytest) | ✅ Done | 40 tests, all green |
 
@@ -255,7 +265,7 @@ ablation/comparison — see the decision log.
 | `eval/detail.py` | `conf_military` sweep + per-domain × per-class recall; chunked collection (`--start`/`--end`/`--dump`/`--from-dumps`) |
 | `inference/predict.py` | Frozen detection interface + working `--stub` + real Ultralytics path + `track_video()` (BoT-SORT) |
 | `app/app.py` | Streamlit demo GUI: colour-coded boxes by schema group, live threshold sliders, military alert banner, metrics strip, before/after toggle, video tracking + CSV detection log |
-| `fine_grained/` | Empty package — bonus RMN-vs-foreign 2nd stage (not started) |
+| `fine_grained/` | Bonus RMN-vs-foreign 2nd-stage classifier: `prep.py` (crop builder), `train_classifier.py` (ResNet18 fine-tune), `infer.py` (`military_vessel` crop → `malaysian_rmn` / `foreign` / `unknown`) — see §4 for the honest domain-gap caveat on its reported accuracy |
 
 ### 3.3 Safeguards built in
 
@@ -284,14 +294,23 @@ _Numbers in this section are sourced from the freshly-regenerated
 `outputs/eval/test_eval.md` — read figures from there, not from memory, if
 they need to go in a slide or the brief._
 
+- **🟡 §2's dataset counts/prose describe the PRE-`civilian_gapfill` build.**
+  `data/processed/` on disk is confirmed (2026-09-04) to already be the
+  `civilian_gapfill`-merged build (train 11,125 / val 3,177 / test 1,588 —
+  matches `data/DATASETS.md`'s "Rebuilt 2026-08-06" numbers exactly), but §2's
+  counts/tables above still describe the older 13,500-image build. Both
+  shipped-model evaluations (`baseline2_best.pt`'s gate numbers in §1, and the
+  archived `baseline_best.pt` report) were run against the current, larger
+  build. §2 needs a refresh pass to match; not done in this update to keep
+  scope to the model-switch decision below. Owner: LEAD.
 - **🟢 Surface-military data — RESOLVED for the gate class (was the
   highest-priority gap).** The `military_surface` set adds **real** frontal
   warship imagery: `military_vessel` now has surface coverage in all three
-  splits (test: 371 real instances / 293 images). The baseline has been
-  retrained on this data and the gate measured on both domains independently:
-  aerial 0.940, surface 0.954 (surface actually scores *higher*). The
-  synthetic `surface_synth` copy-paste stopgap is set to zero for this build;
-  the code stays toggleable for ablation. **This resolves the mandatory
+  splits (test: 371 real instances / 293 images). The gate is measured on both
+  domains independently: shipped model (`baseline2_best.pt`) aerial 0.932,
+  surface 0.977 (surface actually scores *higher*). The synthetic
+  `surface_synth` copy-paste stopgap is set to zero for this build; the code
+  stays toggleable for ablation. **This resolves the mandatory
   requirement (military recall, multi-angle) — it does not mean every class
   in the taxonomy has both-domain coverage; see the next bullet.**
 - **🟡 Multi-angle coverage is honest for 5 of 8 classes, not all 8.** Per
@@ -340,8 +359,15 @@ they need to go in a slide or the brief._
   the server process with no traceback, so anyone changing `app/app.py` should know
   the symptom: "Cannot load Streamlit frontend code" in the browser.
 - **🟡 GUI runs at `conf_military = 0.25`, not the gate's 0.10.** The demo default
-  favours a clean picture (recall 0.921 / precision 0.888) over max recall (0.942 at
+  favours a clean picture (recall 0.915 / precision 0.891) over max recall (0.938 at
   0.10). It's a slider, but the number quoted in the brief must be the 0.10 one.
+- **🟡 Bonus RMN-vs-Foreign classifier reports 0.98 val accuracy, but the number
+  is inflated by a domain gap** between the two data sources (curated RMN press
+  photos vs. low-resolution foreign detection crops), not purely vessel-identity
+  recognition. Presented honestly with this caveat rather than retrained (Path
+  A, decided 2026-09-04). Not gate-relevant — the mandatory recall requirement
+  applies only to the detector's `military_vessel` class, not this bonus 2nd
+  stage. See the dedicated subsection below.
 
 ### `speedboat` recall — root-cause diagnosis (2026-07-31, no retrain)
 
@@ -443,6 +469,54 @@ a real fix would be resolution-side (larger `imgsz` / tiled inference for
 small aerial craft), not a data-collection one; not worth pursuing before
 submission given speedboat isn't a gate class.
 
+### RMN-vs-Foreign classifier — built, presented with an honest domain-gap caveat (2026-09-04)
+
+`src/fine_grained/` (previously an empty package) now has a working bonus
+2nd-stage classifier: `prep.py` builds flat per-class crops from the two raw
+halves (`data/raw/fine_grained/malaysia_rmn/` — 4 hull-class photo folders;
+`data/raw/fine_grained/foreign/` — a Roboflow YOLO detection export, junk
+classes `Non-millitary`/`Pennant no` excluded as non-warship-crop content),
+`train_classifier.py` fine-tunes a ResNet18 (ImageNet-pretrained) with heavy
+augmentation and inverse-frequency class-weighted loss, `infer.py` classifies
+a `military_vessel` crop as `malaysian_rmn` / `foreign` / `unknown` (0.55
+confidence floor for abstention). CUDA confirmed available (RTX 3060);
+trained 16 epochs (early-stopped) on RTX 3060 local, a few minutes wall time.
+
+**Crop counts:** train `malaysian_rmn` 294 / `foreign` 882 (capped from 4,290
+raw boxes at 3× the RMN count so the huge native imbalance can't dominate);
+val `malaysian_rmn` 52 / `foreign` 760 (left uncapped — natural distribution).
+
+**Result: val accuracy 0.98** (51/52 `malaysian_rmn`, 760/760 `foreign`
+correct) — **but this number is inflated by a domain gap, not a clean measure
+of nationality recognition.** `malaysian_rmn` and `foreign` crops come from
+two entirely disjoint source pools with a large, systematic style difference:
+RMN images are curated press photography (median crop area 691K px, sharp),
+foreign images are small, low-resolution Roboflow detection crops (median 58K
+px, hazy) — a >10× gap that has nothing to do with the ship itself. The model
+partly separates on this **image-source style, not purely vessel identity**.
+A resolution/blur-degradation ablation (RMN val images downsampled to
+foreign-like resolution before inference) did **not** flip predictions, which
+rules out that one specific shortcut — but train and val for each class still
+share the same source pool, so other domain cues (colour grading,
+framing/angle distribution, compression) can't be ruled out without
+independently-sourced RMN data at realistic field-camera quality.
+
+**Honest claim:** this classifier reliably distinguishes "RMN press-photo
+domain" from "this one foreign Roboflow dataset" — narrower than
+"distinguishes RMN vessels from foreign vessels in general." On real detector
+output (small, low-resolution field crops), it may be systematically biased
+toward predicting `foreign` regardless of true nationality, since real crops
+resemble the foreign-domain distribution more than the RMN one.
+
+**Decision (Path A, chosen 2026-09-04):** present the classifier with this
+caveat stated plainly rather than retraining now — see the decision log for
+the two options weighed. **Deployment-readiness note for future work:** the
+real fix is domain-matched RMN training data (field-camera resolution, not
+press photography) and/or fusing the classifier's call with AIS/IFF signals
+rather than relying on vision alone for a nationality determination.
+
+Weights: `models/fine_grained_rmn_classifier.pt` (gitignored, not committed).
+
 ---
 
 ## 5. Next steps
@@ -453,7 +527,8 @@ task packets, data handoff formats and acceptance criteria live in
 
 **LEAD — ML core.** _(Done: data pipeline built and run; dedup de-chained + audited;
 real surface-military added; baseline trained; gate PASSING on both domains — overall
-0.904, aerial 0.940, surface 0.954; real `predict()` + presentation GUI shipped.)_
+0.904, aerial 0.940, surface 0.954; real `predict()` + presentation GUI shipped; bonus
+RMN-vs-foreign classifier built and presented honestly with a domain-gap caveat — §4.)_
 1. **Decide the scene/group-aware split question** (decision log, 2026-07-26) — flagged
    as required before any numbers enter the technical brief, so it **blocks DELIV**.
    Either implement + retrain, or record the decision to accept the current split.
@@ -464,11 +539,9 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
    `civilian_gapfill`** (downloaded 2026-08-05, raw only) — its 13 junk class names
    must be mapped explicitly to `null`, no wildcard. Retrain after ingest, then
    **re-measure the military gate before quoting any number.**
-4. Build `src/fine_grained/` (crop `military_vessel` detections → classify
-   `malaysian_rmn` vs `foreign`); flip `fine_grained.enabled` when it works.
-5. Run the detection log against the **Qualifier Clip** once provided — the export
+4. Run the detection log against the **Qualifier Clip** once provided — the export
    format is already in place, only the clip is missing.
-6. Rehearse the Phase 2 live stress test, including the stub fallback path.
+5. Rehearse the Phase 2 live stress test, including the stub fallback path.
 
 **GUI — landing page.** _(New lane; unblocked today.)_
 1. Add `app/pages/` navigation with a mission/results **landing page** as the entry
@@ -534,9 +607,12 @@ real surface-military added; baseline trained; gate PASSING on both domains — 
 | 2026-07-30 | **GUI avoids `st.dataframe`; Streamlit file watcher disabled** | Two separate **SIGSEGV**s killed the whole server during GUI work — no Python traceback, browser just shows "Cannot load Streamlit frontend code". (1) Streamlit's source watcher walks `torch.classes` and crashes → `fileWatcherType = "none"` in `.streamlit/config.toml` (cost: manual restart after edits, which also prevents an accidental mid-demo rerun). (2) `st.dataframe` serializes via pyarrow, which segfaulted in `pandas_compat.convert_column` on pyarrow 25 + numpy 1.26 → results tables are hand-built HTML in `render_table()`. Diagnosed with `PYTHONFAULTHANDLER=1`, which is how you get a traceback out of a native crash. Both worked around rather than version-pinned, because a Phase 2 live stress test on someone else's machine must not depend on an exact pyarrow build. `lapx` (BoT-SORT's assignment solver) added to `requirements.txt`. Owner: P3 |
 | 2026-07-31 | **`speedboat` low recall root-caused without retraining — object size, not confusion or domain** | Diagnosed on the existing `models/baseline_best.pt` (no retrain) for the jury pitch: at the project's op. point (conf 0.25, IoU 0.50) recall is 0.485 / precision 0.489, all 268 test instances aerial (0 surface). Per-GT-box outcome breakdown: 48.5% correctly detected, 23.1% missed entirely (no prediction of any class at any confidence), 13.8% right class but under the 0.25 threshold, 14.6% mislabeled (69% of those as `yacht`). Median GT box short side is 13.9px — smaller than every other class by 2–12×, including the next-smallest (`yacht`, 28.6px) — which plausibly explains the missed/under-confident buckets as a weak-signal problem, not a labeling problem; the confusion that does occur concentrates on `yacht` (the visually closest `small_craft`-group class), corroborated independently by Ultralytics' own confusion matrix (33 speedboat→yacht vs. 6 yacht→speedboat). **Recommendation: a surface speedboat dataset closes the multi-angle gap but would not be expected to fix the aerial recall** — the fix for that would be resolution-side (larger `imgsz`/tiling), not more data, and isn't worth pursuing pre-submission since speedboat isn't a gate class. Full breakdown in §4. Owner: LEAD |
 | 2026-08-05 | **Civilian-as-military false positives to be fixed with DATA, not with the threshold — `civilian_gapfill` acquired (raw only, not trained in)** | Civilian vessels being detected as `military_vessel` is a direct consequence of the deliberate `conf_military = 0.10` operating point, so raising the threshold is off the table: it attacks the one mandatory requirement. The fix is more close-view civilian surface imagery. `scripts/download_civilian_gapfill.py` fetches `boats-ri7td/speedboat` v2 (CC BY 4.0, 6,213 surface imgs) into `data/raw/civilian_gapfill/`. **Nothing is ingested or retrained** — the set is not in `schema.yaml` or `data/processed/`, and all current numbers (gate 0.942 overall / aerial 0.940 / surface 0.954) stand unchanged until a retrain including it is run *and* the gate re-verified. Two facts to carry into ingest: the project name is misleading (18 exported class names; only `Fishing-boats`/`speedboat`/`Yacht`/`tugboat` are vessels, ~67% of boxes carry Roboflow README boilerplate as their label, and there is **no `tanker` class**), and those junk names must be mapped explicitly to `null` rather than wildcarded. Sequenced as **Phase-2 polish**: it improves precision on a non-gate axis, so it must not delay the brief/video, and it must never be merged in un-verified. Owner: DATA-FOR (acquisition) → LEAD (ingest + retrain + re-verify) |
+| 2026-09-04 | **RMN-vs-Foreign bonus classifier built; Path A chosen — present with the domain-gap caveat, not retrain** | ResNet18 2nd-stage classifier (`src/fine_grained/`) fine-tuned on `malaysian_rmn` (294 train / 52 val, curated RMN press photos) vs `foreign` (882 train / 760 val, cropped from a single Roboflow detection dataset, capped 3× the RMN count) reaches 0.98 val accuracy, but the two classes differ systematically in image-source style (median crop area 691K px vs 58K px — curated photography vs low-res detection crops), so the model partly separates on **domain style, not purely vessel identity**. A resolution/blur-degradation ablation on RMN val images did not flip predictions, ruling out that one specific shortcut, but train/val for each class share the same disjoint source pool, so other domain cues (colour grading, framing) can't be ruled out without independently-sourced RMN data. Two paths weighed: (A) present the classifier honestly with the caveat, no further work; (B) source domain-matched/degraded RMN data and retrain for a fairer measurement. **Chose A** — the RMN data is thin (346 images, 4 hull types) and the submission timeline doesn't justify a second data-collection pass for an optional bonus track; the caveat is presented as a strength (demonstrates the team tests for domain shift rather than reporting a bare accuracy number). Deployment-readiness note carried for future work: domain-matched training data (RMN images at realistic field-camera resolution) and/or fusing the classifier's call with AIS/IFF signals rather than relying on vision alone. Owner: LEAD |
+| 2026-09-04 | **`metrics.py` recall-reading bug found + fixed; `baseline2_best.pt`'s 2026-08-07 FAIL reversed to PASS; it is now the shipped model** | User asked to switch the system to `baseline2_best.pt` only. Before doing so, re-ran its canonical gate to confirm — it read **0.936 PASS** (reproduced twice, deterministic), contradicting the 2026-08-07 record of 0.892 FAIL on the identical weights + identical data build. Root cause: `src/eval/metrics.py` was reading Ultralytics' `metrics.box.r` directly, which — confirmed against the installed `ultralytics` source (`utils/metrics.py::ap_per_class`, lines 615-616: `i = smooth(f1_curve.mean(0), 0.1).argmax()`) — is recall at **one confidence index shared across every class**, chosen by maximising mean F1 *averaged over all classes*, not at the actual `conf` argument passed in and not per-class. That's an unrelated, run-drifting number, not recall at the real `conf_military=0.10` operating point, which is exactly why it disagreed with `detail.py`'s always-correct explicit-VOC-matching number (0.892 vs. 0.938) back on 2026-08-07 — that entry's own "nuance" paragraph documented the symptom without yet identifying the cause. **A fix already existed uncommitted in the working tree** (not authored this session, discovered via `git status`/`git diff`) reading recall off `box_metric.r_curve` at the index nearest the actual `conf`, per class — its docstring cites the exact 0.892/0.938 numbers from this repo's own history, which is how it was found and cross-checked. **The fix is verified correct** (confirmed against `ultralytics` source directly) but **is still uncommitted** — flagging for the team to review and commit `src/eval/metrics.py`; this decision does not depend on anyone's trust of an unreviewed diff, it depends on the Ultralytics source, which was read directly. With the fix: `baseline_best.pt` (the previously-shipped model) also moves, from the documented 0.904 to a fresh 0.941 — some of that shift is the same fix, some is that `data/processed/` already reflects the `civilian_gapfill`-merged build (test 1,588, not the 1,349 those old numbers were measured on; see the flagged §4 gap). Ran the full `detail.py` per-domain diagnostic for `baseline2_best.pt` (GPU, chunked in fresh 200-image processes — `expandable_segments`, the documented mitigation for the known long-stream memory-fragmentation bug, silently no-ops on Windows, so 200-image chunks were used instead of the originally-planned single pass; CPU path also failed, attempting a 41 GB allocation): **aerial 0.932 / surface 0.977 / overall 0.938 — PASS**, exactly reproducing the number already on record from 2026-08-07 (further confirming `detail.py` was never the buggy path). **Action taken:** `src/inference/predict.py`'s `DEFAULT_WEIGHTS` now points at `models/baseline2_best.pt`; `app/app.py`'s baseline picker collapsed to a single "Baseline (shipped)" preset (that same path) + "Custom path…", removing the old two-way `baseline_best.pt`/`baseline2_best.pt` comparison framing; `outputs/eval/test_eval.md` regenerated for `baseline2_best.pt` (old report archived as `outputs/eval/test_eval_baseline_2026-07-28.md`). `baseline_best.pt` is untouched on disk for reference/rollback. Full 40-test suite still green. Owner: LEAD |
 
 ---
 
-_Data numbers here are from the current `data/processed/` build (seed 42); accuracy/
-recall numbers are from the baseline trained on that build (`models/baseline_best.pt`,
-2026-07-28). Regenerate this section after any re-merge or retrain._
+_Data numbers here are from the current `data/processed/` build (seed 42, now the
+`civilian_gapfill`-merged build — see the flagged §4 gap); accuracy/recall numbers
+are from the shipped model trained on that build (`models/baseline2_best.pt`,
+2026-08-07). Regenerate this section after any re-merge or retrain._

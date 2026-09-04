@@ -105,12 +105,35 @@ _Rebuilt 2026-08-06 with `civilian_gapfill` included._
 >
 > The retrain's actual goal — fewer civilian-vessels-detected-as-`military_vessel`
 > false positives — **was achieved**: military_vessel FP count on TEST @
-> `conf_military=0.10` dropped from **965 (current/shipped model) to 708 (this
+> `conf_military=0.10` dropped from **965 (then-shipped model) to 708 (this
 > attempt)**, a ~27% reduction. So the false-positive fix direction is sound;
 > this attempt just gave some recall back to earn it. A future attempt might
 > recover the lost margin with fewer epochs / earlier stopping, or by
 > rebalancing so the added civilian volume doesn't shift the model's confidence
 > calibration on military as much.
+
+> ✅ **CORRECTION (2026-09-04): the 0.892 FAIL above was a bug in `metrics.py`,
+> not a real gate failure — `baseline2_best.pt` actually PASSES, and is now
+> the shipped model.** `src/eval/metrics.py` read Ultralytics' `metrics.box.r`
+> directly, which — confirmed against the installed `ultralytics` source
+> (`utils/metrics.py`, `ap_per_class()`) — is computed at **one confidence
+> index shared across every class**, chosen by maximising `f1_curve.mean(0)`
+> (mean F1 averaged over ALL classes), not at the `conf` argument actually
+> passed in and not per-class. That's an unrelated, run-drifting number, not
+> recall at the real `conf_military=0.10` operating point — which is exactly
+> why it disagreed with `detail.py`'s explicit VOC matching (0.892 vs. 0.938)
+> in the "nuance" paragraph above. The fix reads recall directly off
+> `box_metric.r_curve` at the index nearest the actual `conf`, per class.
+> Re-verified today: canonical gate on `baseline2_best.pt` now reads
+> **military recall 0.936 — PASS** (reproduced twice, deterministic), and a
+> freshly regenerated `detail.py` per-domain report reproduces the *original*
+> 2026-08-07 numbers exactly (aerial 0.932 / surface 0.977 / overall 0.938),
+> confirming `detail.py` itself was never the buggy one. `baseline2_best.pt`
+> is now `src/inference/predict.py`'s `DEFAULT_WEIGHTS` and the app's shipped
+> baseline; `outputs/eval/test_eval.md` was regenerated for it (old
+> `baseline_best.pt` report archived as
+> `outputs/eval/test_eval_baseline_2026-07-28.md`). Full write-up + the fix's
+> commit status: `docs/PROGRESS.md` decision log, 2026-09-04.
 
 > ✅ **Dedup note (de-chained):** the old single-linkage clustering dropped 46%
 > (6,545), but ~78% of that was **transitive chaining** (largest cluster ≈ 2,961
@@ -125,6 +148,27 @@ _Rebuilt 2026-08-06 with `civilian_gapfill` included._
 > ShipRSImageNet 50-class taxonomy, so both go through one collapse in
 > `configs/schema.yaml` (anchor `&shiprs50`). `military_ships` is NOT
 > all-military — it contains civilians too.
+
+## Bonus: RMN-vs-Foreign fine-grained classifier data (`src/fine_grained/`)
+
+This data feeds **only** the optional 2nd-stage nationality classifier that
+runs on `military_vessel` crops the main detector has already produced. It is
+entirely separate from `data/processed/` above — it is never merged, deduped,
+or split alongside the detector data, and does not touch `configs/schema.yaml`.
+
+| Dataset (folder) | Domain | Source | Ver | Licence | Raw imgs | Classes contributed |
+|---|---|---|---|---|---:|---|
+| `foreign` | surface | [`navy-ip6vd/navy-ship-a6prh`](https://universe.roboflow.com/navy-ip6vd/navy-ship-a6prh) (Roboflow, "Navy Ship") | 3 | CC BY 4.0 | 2,125 | foreign-navy warship crops. 9 of 11 native classes kept (`AC`, `Coastguard`, `Destroyer`, `Frigate`, `Fuqing`, `INS Vikrant`, `INS Visakhapatnam`, `INSVikramaditya`, `Ship`); `Non-millitary` and `Pennant no` excluded (not warship-crop content) |
+| `malaysia_rmn` | surface | own collection (RMN — Royal Malaysian Navy / TLDM), by DATA-RMN | — | per-image — see the collection's own manifest, not a single blanket licence | 346 (4 hull classes: `kasturi_corvette`, `kedah_ngpv`, `keris_lms`, `lekiu_ff`) | `malaysian_rmn` class |
+
+> ⚠️ **Known limitation, recorded honestly (2026-09-04):** `malaysia_rmn` and
+> `foreign` differ systematically in photographic style/resolution (median crop
+> area 691K px vs 58K px — curated press photography vs low-resolution
+> detection crops), a domain gap unrelated to actual vessel identity. The
+> trained classifier (`models/fine_grained_rmn_classifier.pt`) reports 0.98 val
+> accuracy, but that number is partly inflated by this domain gap, not a clean
+> measure of nationality recognition. Presented honestly rather than retrained
+> (Path A). Full write-up + decision log: `docs/PROGRESS.md` §4.
 
 ## Candidate / not yet integrated
 
@@ -141,7 +185,7 @@ the current build. Mind the dedup overlaps if added (they cause train/test leak)
 
 | Dataset | Domain | Purpose | Status |
 |---|---|---|---|
-| Custom RMN set | surface + aerial | val + bonus fine-grained (`malaysian_rmn` vs `foreign`), and to help close the **surface-military gap** | not started (P4) |
+| Custom RMN set | surface + aerial | val + bonus fine-grained (`malaysian_rmn` vs `foreign`), and to help close the **surface-military gap** | ✅ RMN/foreign halves sourced and in use for the bonus classifier — see "Bonus: RMN-vs-Foreign fine-grained classifier data" above. Surface-military-gap contribution to the *main detector* not pursued (`malaysia_rmn`/`foreign` are not mapped into `configs/schema.yaml` or `data/processed/`) |
 
 ### Notes
 - Map each source's native class names in `configs/schema.yaml` under
