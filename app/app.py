@@ -24,6 +24,7 @@ import re
 import sys
 import tempfile
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import cv2
@@ -42,9 +43,19 @@ if str(_REPO_ROOT) not in sys.path:
 # file in pyproject.toml rather than with an inline suppression comment, because
 # current ruff already understands the sys.path idiom and would then flag that
 # comment itself as an unused directive (RUF100).
+from src.analysis.trajectory_anomaly import (
+    DEFAULT_COURSE_CHANGE_DEG,
+    DEFAULT_LOITER_MIN_DURATION_S,
+    DEFAULT_LOITER_RADIUS_PX,
+    DEFAULT_MIN_MOVE_PX,
+    detect_anomalies,
+)
+from src.analysis.trajectory_anomaly import render_markdown as render_anomaly_markdown
 from src.fine_grained import infer as fg
 from src.inference import predict as gp
 from src.inference.predict import Detection
+from src.reports.incident_report import ReportSummary, summarize_detections
+from src.reports.incident_report import render_markdown as render_incident_markdown
 
 # `fg` (like `gp`) keeps torch/torchvision as lazy imports inside its
 # functions, so importing it here doesn't break stub mode's no-torch promise.
@@ -888,6 +899,24 @@ def inject_css(light_mode: bool = False) -> None:
       .entry-footer {{ color:var(--g-muted); font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; padding:1rem 0; }}
       [data-testid="stButton"] button[kind="primary"] {{ background:var(--g-cyan); color:#f2f7f8; border:1px solid var(--g-cyan); border-radius:2px; font-weight:600; }}
       [data-testid="stButton"] button[kind="primary"]:hover {{ background:var(--g-cyan); opacity:.92; }}
+      /* Download buttons (detection log CSV, incident report Markdown):
+         a subtle cyan-accented variant of the standard secondary button,
+         not the plain default — makes it read as its own actionable
+         control instead of blending into the panel, in both themes, via
+         the same --g-* tokens already used everywhere else. margin above
+         AND below covers both call sites: a gap below the table it
+         follows, and a gap on both sides for the incident report button. */
+      [data-testid="stDownloadButton"] {{ margin:20px 0; }}
+      [data-testid="stDownloadButton"] button {{
+        background:var(--g-panel); border:1px solid var(--g-cyan);
+        color:var(--g-cyan); border-radius:4px; font-weight:600;
+      }}
+      [data-testid="stDownloadButton"] button p,
+      [data-testid="stDownloadButton"] button span {{ color:var(--g-cyan); }}
+      [data-testid="stDownloadButton"] button svg {{ fill:var(--g-cyan); }}
+      [data-testid="stDownloadButton"] button:hover {{
+        background:var(--g-panel-2); border-color:var(--g-cyan); color:var(--g-cyan);
+      }}
       /* Centering is handled by the [1,1.3,1] column layout around the
          button in landing_page(), not CSS — this block only styles it.
          Streamlit's own flex gap between element-containers floors at
@@ -1018,6 +1047,13 @@ def inject_css(light_mode: bool = False) -> None:
       .chip {{ padding:.55rem .85rem; min-width:116px; flex:1; background:var(--g-panel); }}
       .chip .k {{ font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--g-muted); }}
       .chip .v {{ font-size:1.3rem; font-weight:600; line-height:1.15; color:var(--g-text); }}
+      /* Incident report panel heading — deliberately NOT st.subheader()
+         (Streamlit's default ~1.5-1.75rem), which is what made this look
+         like an oversized AI-report title. Same restrained scale as the
+         rest of the dashboard's section headings. */
+      .incident-head {{ display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:.4rem .8rem; margin:1.6rem 0 .6rem; }}
+      .incident-title {{ color:var(--g-text); font-size:1rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; margin:0; }}
+      .incident-sub {{ color:var(--g-muted); font-size:.78rem; }}
       .legend-swatch {{ display:inline-block; width:9px; height:9px; margin-right:.35rem; vertical-align:middle; border:1px solid var(--g-line); }}
       .table-wrap {{ overflow-x:auto; overflow-y:auto; border:1px solid var(--g-line); max-height:none; }}
       .table-wrap.scrollable {{ max-height:460px; }}
@@ -1032,6 +1068,13 @@ def inject_css(light_mode: bool = False) -> None:
       .det-table {{ width:100%; border-collapse:separate; border-spacing:0; font-size:.87rem; margin:0 !important; }}
       .det-table th {{ position:sticky; top:0; text-align:left; padding:.5rem .7rem; font-weight:600; text-transform:uppercase; font-size:.72rem; letter-spacing:.6px; background:var(--g-panel-2); color:var(--g-muted); border-bottom:1px solid var(--g-line); }}
       .det-table td {{ padding:.42rem .7rem; color:var(--g-text); border-bottom:1px solid var(--g-line); }}
+      /* Tracking timeline accordion (the app's only st.expander, so this
+         is safe unscoped): stExpanderDetails only exists in the DOM while
+         expanded — Streamlit unmounts it entirely when collapsed — so this
+         padding costs nothing in the collapsed state. No extra width/margin
+         inset on .table-wrap itself: it fills 100% of this padded content
+         area and is centred purely by that padding, not by its own sizing. */
+      [data-testid="stExpanderDetails"] {{ padding:24px 24px 26px; }}
       {light_only_css}
       {dark_only_css}
     </style>
@@ -1492,8 +1535,183 @@ def image_view(
     ))
 
 
+def render_incident_summary(summary: ReportSummary, source_name: str) -> None:
+    """Compact SOC-style incident summary: a KPI strip + class-breakdown
+    badges + a collapsed timeline table, in place of the verbose written
+    report on screen. Pure presentation over ReportSummary's own fields —
+    summarize_detections() is untouched, and the downloadable .md report
+    (render_incident_markdown, called separately) stays byte-identical to
+    the CLI output; only how this data looks on screen changes.
+    """
+    st.markdown(
+        f'<div class="incident-head">'
+        f'<div class="incident-title">Incident Report</div>'
+        f'<div class="incident-sub">{source_name}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    if summary.total_rows == 0:
+        st.info("No detections were logged for this clip.")
+        return
+
+    # No frame-count tile here on purpose — total_rows is a per-frame number
+    # (e.g. 180 for a 6s clip at ~30fps of one ship) that reads as "180
+    # ships" at a glance; Tracked is the number that actually answers "how
+    # many vessels". The raw count still lives in the Detection log table
+    # below and its CSV, just not surfaced as a headline KPI here.
+    military_accent = "var(--g-red)" if summary.n_military_vessels else None
+    kpis = [
+        ("Duration", f"{summary.clip_duration_s:.2f}s", None, None),
+        ("Tracked", str(summary.n_tracked_vessels), None, "Distinct tracked vessels in this clip."),
+        ("Military", str(summary.n_military_vessels), military_accent, "Distinct military-class tracks."),
+        ("Confidence", f"{summary.overall_mean_confidence * 100:.0f}%", None, None),
+    ]
+
+    def _chip(label: str, value: str, accent: str | None, tooltip: str | None) -> str:
+        border = f' style="border-top:2px solid {accent}"' if accent else ""
+        value_style = f' style="color:{accent}"' if accent else ""
+        title = f' title="{tooltip}"' if tooltip else ""
+        return (
+            f'<div class="chip"{border}{title}>'
+            f'<div class="k">{label}</div>'
+            f'<div class="v"{value_style}>{value}</div>'
+            f"</div>"
+        )
+
+    chips_html = "".join(_chip(label, value, accent, tooltip) for label, value, accent, tooltip in kpis)
+    st.markdown(f'<div class="chip-row">{chips_html}</div>', unsafe_allow_html=True)
+
+    if summary.class_counts:
+        # No frame-count per badge here either — class_counts tallies rows
+        # (frame-level), same trap as the removed "Frame detections" KPI
+        # (e.g. "military_vessel · 180" reading as 180 ships). Sort order
+        # still uses the count (most-frequent class first), just doesn't
+        # display it.
+        badges = "".join(
+            f'<span class="tax-chip">{cls}</span>'
+            for cls, _count in sorted(summary.class_counts.items(), key=lambda kv: -kv[1])
+        )
+        st.markdown(
+            f'<div class="incident-sub" style="margin:.6rem 0 .2rem">Detection class</div>'
+            f"<div>{badges}</div>",
+            unsafe_allow_html=True,
+        )
+
+    if summary.tracks:
+        with st.expander(f"Tracking timeline ({len(summary.tracks)} track(s))"):
+            timeline_df = pd.DataFrame([
+                {
+                    "track": t.track_id,
+                    "class": t.class_name,
+                    "first_seen_s": t.first_seen_s,
+                    "duration_s": t.duration_s,
+                    "detections": t.n_detections,
+                    "max_conf": t.max_confidence,
+                    "mean_conf": t.mean_confidence,
+                }
+                for t in summary.tracks
+            ])
+            render_table(timeline_df)
+
+
+def _render_detection_log_panel(video_id: str) -> None:
+    """Detection log table + CSV download for the last processed video.
+
+    Same session-state read-back as _render_video_analysis_panels, and for
+    the same reason: st.download_button click is itself a rerun, and that
+    rerun reads "Run detection on video" back as False, so without this the
+    table (and its own download button) would vanish the instant you used
+    the CSV download button — the fresh-run code path that renders them
+    never executes again on that rerun.
+    """
+    if st.session_state.get("guardian_last_video_key") != video_id:
+        return
+    df = st.session_state.get("guardian_last_video_df")
+    source_name = st.session_state.get("guardian_last_video_source", "video")
+    if df is None:
+        return
+
+    st.subheader(f"Detection log ({len(df)} rows)")
+    render_table(df.head(500))
+    if len(df) > 500:
+        st.caption("Showing the first 500 rows — the CSV contains all of them.")
+    st.download_button(
+        "Download detection log (CSV)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name=f"{Path(source_name).stem}_detections.csv",
+        mime="text/csv",
+        icon=":material/download:",
+        key=f"dl_csv_{video_id}",
+    )
+
+
+def _render_video_analysis_panels(settings: dict, video_id: str) -> None:
+    """Incident report + behaviour-anomaly panels for the last processed video.
+
+    Reads the detection log back from st.session_state rather than taking a
+    `df` argument, so it renders identically whether called right after a
+    fresh run (this rerun) or from video_view()'s "button not clicked" early
+    return on a later rerun (e.g. a sidebar slider changed) — in the latter
+    case `df` was never recomputed locally, only what's stashed in session
+    state survives. `video_id` guards against showing a previous video's
+    stale report after a new file is uploaded: if it doesn't match what's
+    stored, nothing renders (falls back gracefully — no error, no stale
+    data), rather than assuming the stored df is still relevant.
+    """
+    if st.session_state.get("guardian_last_video_key") != video_id:
+        return
+    df = st.session_state.get("guardian_last_video_df")
+    source_name = st.session_state.get("guardian_last_video_source", "video")
+    if df is None:
+        return
+    stem = Path(source_name).stem
+
+    summary = summarize_detections(df)
+    render_incident_summary(summary, source_name=stem)
+    report_md = render_incident_markdown(summary, source_name=stem)
+    st.download_button(
+        "Download incident report (Markdown)",
+        data=report_md.encode("utf-8"),
+        file_name=f"{stem}_incident_report.md",
+        mime="text/markdown",
+        icon=":material/download:",
+        key=f"dl_incident_{video_id}",
+    )
+
+    if not settings.get("behavior_enabled"):
+        return
+
+    st.subheader("Behaviour anomaly flags")
+    flags = detect_anomalies(
+        df,
+        restricted_zone=settings.get("restricted_zone"),
+        loiter_radius_px=settings["loiter_radius_px"],
+        loiter_min_duration_s=settings["loiter_min_duration_s"],
+        course_change_deg=settings["course_change_deg"],
+        min_move_px=settings["min_move_px"],
+    )
+    if not flags:
+        st.info("No anomalies flagged for this clip.")
+    else:
+        flags_df = pd.DataFrame([asdict(f) for f in flags]).rename(
+            columns={"class_name": "class", "at_timestamp_s": "timestamp"}
+        )[["track_id", "class", "reason", "timestamp", "detail"]]
+        render_table(flags_df)
+
+    anomaly_md = render_anomaly_markdown(flags, source_name=stem)
+    st.download_button(
+        "Download anomaly report (Markdown)",
+        data=anomaly_md.encode("utf-8"),
+        file_name=f"{stem}_anomaly_report.md",
+        mime="text/markdown",
+        key=f"dl_anomaly_{video_id}",
+    )
+
+
 def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -> None:
     """Video flow: BoT-SORT tracking, live playback, downloadable log."""
+    video_id = f"{filename}:{len(video_bytes)}"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(video_bytes)
         path = tmp.name
@@ -1518,6 +1736,13 @@ def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -
                      use_container_width=True):
         st.video(video_bytes)
         Path(path).unlink(missing_ok=True)
+        # A prior run's table/report/flags for THIS SAME video (video_id)
+        # survive a rerun triggered by, say, an anomaly-threshold slider —
+        # or by clicking either download button itself, which is a rerun
+        # too — re-read from session_state rather than needing "Run
+        # detection" clicked again.
+        _render_detection_log_panel(video_id)
+        _render_video_analysis_panels(settings, video_id)
         return
 
     if settings["stub"]:
@@ -1605,23 +1830,28 @@ def video_view(video_bytes: bytes, suffix: str, settings: dict, filename: str) -
     with metrics_slot.container():
         render_metrics(dets_only, elapsed, frames=max(1, processed))
 
+    # Vessel count leads the sentence (not the frame count) so the number
+    # that actually answers "how many ships" is the first thing read, not
+    # buried after the much larger frame-count figure.
     st.success(
-        f"Processed {processed} frame(s) in {elapsed:.1f}s · "
-        f"{len(seen_tracks)} unique vessel track(s) · "
-        f"{len(military_tracks)} military track(s)."
+        f"Detected {len(seen_tracks)} vessel(s) ({len(military_tracks)} military) · "
+        f"{processed} frame(s) processed in {elapsed:.1f}s."
     )
 
     df = detections_dataframe(all_items, with_track=True)
-    st.subheader(f"Detection log ({len(df)} rows)")
-    render_table(df.head(500))
-    if len(df) > 500:
-        st.caption("Showing the first 500 rows — the CSV contains all of them.")
-    st.download_button(
-        "Download detection log (CSV)",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name=f"{Path(filename).stem}_detections.csv",
-        mime="text/csv",
-    )
+    # Stashed under video_id so a later rerun (an anomaly-threshold slider,
+    # or clicking either download button below — that's a rerun too, and
+    # reads this same "Run detection" button back as False) can still show
+    # the table/incident report/anomaly flags without re-running inference
+    # — see _render_detection_log_panel / _render_video_analysis_panels —
+    # and so a freshly uploaded, different video doesn't show this one's
+    # stale results.
+    st.session_state["guardian_last_video_df"] = df
+    st.session_state["guardian_last_video_source"] = filename
+    st.session_state["guardian_last_video_key"] = video_id
+
+    _render_detection_log_panel(video_id)
+    _render_video_analysis_panels(settings, video_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1752,27 +1982,11 @@ def sidebar() -> dict:
 
         _sb_break()
 
-        st.markdown('<div class="sb-label">Classification</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sb-group-label">Legend</div>', unsafe_allow_html=True)
-        pills = "".join(
-            f'<span class="sb-legend-pill" style="background:{hexcol}22;'
-            f'border:1px solid {hexcol}55;color:var(--g-text)">'
-            f'<span class="sb-legend-dot" style="background:{hexcol}"></span>{label}</span>'
-            for group, (_, hexcol, label) in GROUP_COLOURS.items()
-            if group != "other"
-        )
-        st.markdown(f'<div class="sb-legend">{pills}</div>', unsafe_allow_html=True)
-
-        _sb_break()
-
         st.markdown('<div class="sb-label">Bonus: Nationality Classifier</div>',
                     unsafe_allow_html=True)
         st.markdown(
-            '<div class="sb-desc">Optional 2nd-stage model: classifies each '
-            'military contact as Malaysian RMN or a foreign navy. '
-            '<b>Caveat:</b> val accuracy 0.98 is inflated by an image-source '
-            'domain gap between the RMN and foreign training data, not pure '
-            'vessel-identity recognition — see docs/PROGRESS.md §4.</div>',
+            '<div class="sb-desc">Classifies each military contact as '
+            'Malaysian RMN or foreign navy.</div>',
             unsafe_allow_html=True,
         )
         with st.container(key="sb_card_fg"):
@@ -1814,6 +2028,86 @@ def sidebar() -> dict:
                      "than a guess.",
             )
 
+        _sb_break()
+
+        st.markdown('<div class="sb-label">Behaviour Analysis</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sb-desc">Flags loitering, sudden course changes, '
+            'and restricted-zone entries in tracked video footage.</div>',
+            unsafe_allow_html=True,
+        )
+        with st.container(key="sb_card_behavior"):
+            behavior_enabled = st.toggle(
+                "Enable behaviour analysis",
+                value=False,
+                help="Runs the loitering / course-change / restricted-zone "
+                     "checks over the video detection log.",
+            )
+            loiter_radius_px = st.slider(
+                "Loiter radius (px)", 5.0, 200.0, DEFAULT_LOITER_RADIUS_PX, 5.0,
+                disabled=not behavior_enabled,
+                help="A track that never leaves this radius for the minimum "
+                     "duration below counts as loitering.",
+            )
+            loiter_min_duration_s = st.slider(
+                "Loiter min duration (s)", 1.0, 60.0, DEFAULT_LOITER_MIN_DURATION_S, 1.0,
+                disabled=not behavior_enabled,
+                help="Minimum time spent within the loiter radius before "
+                     "it's flagged.",
+            )
+            course_change_deg = st.slider(
+                "Course change threshold (°)", 10.0, 180.0, DEFAULT_COURSE_CHANGE_DEG, 5.0,
+                disabled=not behavior_enabled,
+                help="Heading change between consecutive points that counts "
+                     "as a sudden course change.",
+            )
+            min_move_px = st.slider(
+                "Min movement (px)", 1.0, 50.0, DEFAULT_MIN_MOVE_PX, 1.0,
+                disabled=not behavior_enabled,
+                help="Movement below this is treated as jitter and ignored "
+                     "when computing heading.",
+            )
+            zone_enabled = st.toggle(
+                "Restrict to a zone",
+                value=False,
+                disabled=not behavior_enabled,
+                help="Also flag a track when its path enters this pixel box "
+                     "in the source video frame.",
+            )
+            zcol1, zcol2 = st.columns(2)
+            with zcol1:
+                zone_x1 = st.number_input(
+                    "Zone x1", value=0, step=10, disabled=not zone_enabled,
+                )
+                zone_y1 = st.number_input(
+                    "Zone y1", value=0, step=10, disabled=not zone_enabled,
+                )
+            with zcol2:
+                zone_x2 = st.number_input(
+                    "Zone x2", value=100, step=10, disabled=not zone_enabled,
+                )
+                zone_y2 = st.number_input(
+                    "Zone y2", value=100, step=10, disabled=not zone_enabled,
+                )
+            restricted_zone = (
+                (float(zone_x1), float(zone_y1), float(zone_x2), float(zone_y2))
+                if behavior_enabled and zone_enabled else None
+            )
+
+        _sb_break()
+
+        st.markdown('<div class="sb-label">Classification</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-group-label">Legend</div>', unsafe_allow_html=True)
+        pills = "".join(
+            f'<span class="sb-legend-pill" style="background:{hexcol}22;'
+            f'border:1px solid {hexcol}55;color:var(--g-text)">'
+            f'<span class="sb-legend-dot" style="background:{hexcol}"></span>{label}</span>'
+            for group, (_, hexcol, label) in GROUP_COLOURS.items()
+            if group != "other"
+        )
+        st.markdown(f'<div class="sb-legend">{pills}</div>', unsafe_allow_html=True)
+
     return {
         "stub": stub,
         "weights": "" if stub else weights,
@@ -1825,6 +2119,12 @@ def sidebar() -> dict:
         "fg_enabled": fg_enabled,
         "fg_weights": fg_weights,
         "fg_conf_floor": fg_conf_floor,
+        "behavior_enabled": behavior_enabled,
+        "loiter_radius_px": loiter_radius_px,
+        "loiter_min_duration_s": loiter_min_duration_s,
+        "course_change_deg": course_change_deg,
+        "min_move_px": min_move_px,
+        "restricted_zone": restricted_zone,
     }
 
 
