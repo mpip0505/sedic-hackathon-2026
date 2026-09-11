@@ -132,6 +132,17 @@ FG_LABEL_DISPLAY = {
     "foreign": "Foreign navy",
     fg.UNKNOWN: "Unknown",
 }
+# Colours for the nationality split panel: own navy green, foreign amber
+# (caution — red stays reserved for the military-contact alert), below-floor
+# calls muted. Theme variables, so they follow light/dark like everything else.
+FG_LABEL_COLOURS = {
+    "malaysian_rmn": "var(--g-green)",
+    "foreign": "var(--g-amber)",
+    fg.UNKNOWN: "var(--g-muted)",
+}
+# Fixed display order, so a label sits in the same place from image to image
+# instead of jumping around as counts change.
+FG_LABEL_ORDER = ["malaysian_rmn", "foreign", fg.UNKNOWN]
 
 # --- Colour coding by schema group (BGR for OpenCV, hex for HTML) -----------
 GROUP_COLOURS: dict[str, tuple[tuple[int, int, int], str, str]] = {
@@ -1047,6 +1058,17 @@ def inject_css(light_mode: bool = False) -> None:
       .chip {{ padding:.55rem .85rem; min-width:116px; flex:1; background:var(--g-panel); }}
       .chip .k {{ font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--g-muted); }}
       .chip .v {{ font-size:1.3rem; font-weight:600; line-height:1.15; color:var(--g-text); }}
+      .chip .s {{ font-size:.7rem; color:var(--g-muted); margin-top:.15rem; }}
+      /* Nationality split: one stacked bar under the percentage chips, so the
+         RMN-vs-foreign balance reads at a glance without parsing the table. */
+      /* box-sizing + max-width matter: this is the only element here with an
+         explicit width AND a border, and under content-box that is a 2px
+         horizontal overflow of the block container — which Streamlit's
+         resize observer turns into a re-measure/re-render loop (React #185,
+         "maximum update depth"). Keep it strictly inside its container. */
+      .nat-bar {{ display:flex; box-sizing:border-box; width:100%; max-width:100%; height:12px; border:1px solid var(--g-line); background:var(--g-panel-2); overflow:hidden; margin:.1rem 0 .45rem; }}
+      .nat-seg {{ height:100%; flex:none; min-width:0; }}
+      .nat-note {{ color:var(--g-muted); font-size:.78rem; margin:0 0 .9rem; }}
       /* Incident report panel heading — deliberately NOT st.subheader()
          (Streamlit's default ~1.5-1.75rem), which is what made this look
          like an oversized AI-report title. Same restrained scale as the
@@ -1361,6 +1383,61 @@ def classify_military_crops(
     return results
 
 
+def render_nationality_split(
+    dets: list[Detection],
+    nationality: dict[int, fg.ClassificationResult],
+) -> None:
+    """Headline percentage split of the RMN-vs-Foreign calls.
+
+    The per-contact answer already lives in the results table; this is the
+    at-a-glance answer — what share of the classified military contacts came
+    back Malaysian RMN, foreign, or below the confidence floor. Percentages
+    are of the contacts actually classified, and the note spells that
+    denominator out so a skipped crop can't silently inflate a share.
+    """
+    if not nationality:
+        return
+    total = len(nationality)
+    counts: dict[str, int] = {}
+    confs: dict[str, list[float]] = {}
+    for result in nationality.values():
+        counts[result.label] = counts.get(result.label, 0) + 1
+        confs.setdefault(result.label, []).append(result.confidence)
+
+    ordered = [name for name in FG_LABEL_ORDER if name in counts]
+    # Any label the classifier gains later still shows up, just after these.
+    ordered += [name for name in counts if name not in FG_LABEL_ORDER]
+
+    chips, segments = [], []
+    for name in ordered:
+        pct = 100.0 * counts[name] / total
+        colour = FG_LABEL_COLOURS.get(name, "var(--g-cyan)")
+        display = FG_LABEL_DISPLAY.get(name, name)
+        avg = sum(confs[name]) / len(confs[name])
+        chips.append(
+            f'<div class="chip" style="border-top:2px solid {colour}">'
+            f'<div class="k">{display}</div>'
+            f'<div class="v" style="color:{colour}">{pct:.0f}%</div>'
+            f'<div class="s">{counts[name]} of {total} · avg conf {avg:.0%}</div>'
+            "</div>"
+        )
+        segments.append(
+            f'<div class="nat-seg" style="width:{pct:.4f}%;background:{colour}" '
+            f'title="{display} — {pct:.0f}%"></div>'
+        )
+
+    military_total = sum(1 for d in dets if d.class_name in get_military_classes())
+    skipped = military_total - total
+    note = f"Share of the {total} military contact(s) classified"
+    note += f"; {skipped} skipped (crop too small)." if skipped > 0 else "."
+    st.markdown(
+        f'<div class="chip-row">{"".join(chips)}</div>'
+        f'<div class="nat-bar">{"".join(segments)}</div>'
+        f'<div class="nat-note">{note}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_nationality_results(
     image_bgr: np.ndarray,
     dets: list[Detection],
@@ -1377,6 +1454,7 @@ def render_nationality_results(
         "not pure vessel-identity recognition — treat these as indicative, "
         "not certain. See docs/PROGRESS.md §4."
     )
+    render_nationality_split(dets, nationality)
     image_rgb = to_rgb(image_bgr)
     items = list(nationality.items())
     cols = st.columns(min(4, len(items)))
@@ -1386,7 +1464,7 @@ def render_nationality_results(
         col = cols[n % len(cols)]
         if crop.size:
             label = FG_LABEL_DISPLAY.get(result.label, result.label)
-            show_image(crop, f"{label} · {result.confidence:.2f}", slot=col)
+            show_image(crop, f"{label} · {result.confidence:.0%}", slot=col)
 
 
 def render_table(df: pd.DataFrame) -> None:
